@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+alembic
+pydantic
+python-dotenv
+redis
+celery
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
