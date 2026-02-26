@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Receipt #{{ receipt.id }} - Email Receipts{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Receipt #{{ receipt.id }}
+        <span class="badge badge-{{ receipt.status.value }}">{{ receipt.status.value.replace('_',' ') }}</span>
+    </h2>
+    <div>
+        <a href="/ui/receipts" class="btn btn-outline-secondary btn-sm">← Back</a>
+        <button class="btn btn-warning btn-sm" onclick="reprocess({{ receipt.id }})">🔄 Reprocess</button>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">Email Details</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Subject</dt>
+                    <dd class="col-sm-8">{{ receipt.subject or '—' }}</dd>
+                    <dt class="col-sm-4">From</dt>
+                    <dd class="col-sm-8">{{ receipt.sender or '—' }}</dd>
+                    <dt class="col-sm-4">Received</dt>
+                    <dd class="col-sm-8">{{ receipt.received_at or '—' }}</dd>
+                    <dt class="col-sm-4">Message ID</dt>
+                    <dd class="col-sm-8"><code>{{ receipt.gmail_message_id }}</code></dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">Extracted Data</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Merchant</dt>
+                    <dd class="col-sm-8">{{ receipt.merchant or '—' }}</dd>
+                    <dt class="col-sm-4">Date</dt>
+                    <dd class="col-sm-8">{{ receipt.purchase_date or '—' }}</dd>
+                    <dt class="col-sm-4">Amount</dt>
+                    <dd class="col-sm-8">{% if receipt.amount is not none %}{{ "%.2f"|format(receipt.amount) }} {{ receipt.currency }}{% else %}—{% endif %}</dd>
+                    <dt class="col-sm-4">Card Last4</dt>
+                    <dd class="col-sm-8">{{ receipt.card_last4_seen or '—' }}</dd>
+                    <dt class="col-sm-4">Network</dt>
+                    <dd class="col-sm-8">{{ receipt.card_network_or_issuer or '—' }}</dd>
+                    <dt class="col-sm-4">Source</dt>
+                    <dd class="col-sm-8">{{ receipt.source_type or '—' }}</dd>
+                    <dt class="col-sm-4">Confidence</dt>
+                    <dd class="col-sm-8">{% if receipt.confidence is not none %}{{ "%.0f"|format(receipt.confidence * 100) }}%{% else %}—{% endif %}</dd>
+                    <dt class="col-sm-4">Notes</dt>
+                    <dd class="col-sm-8"><small>{{ receipt.extraction_notes or '—' }}</small></dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if receipt.drive_path %}
+<div class="card mb-3">
+    <div class="card-header">Drive Storage</div>
+    <div class="card-body">
+        <dl class="row mb-0">
+            <dt class="col-sm-2">Path</dt>
+            <dd class="col-sm-10"><code>{{ receipt.drive_path }}</code></dd>
+            {% if receipt.drive_file_id %}
+            <dt class="col-sm-2">File ID</dt>
+            <dd class="col-sm-10"><a href="https://drive.google.com/file/d/{{ receipt.drive_file_id }}" target="_blank">{{ receipt.drive_file_id }}</a></dd>
+            {% endif %}
+        </dl>
+    </div>
+</div>
+{% endif %}
+
+{% if receipt.attachment_logs %}
+<div class="card mb-3">
+    <div class="card-header">Attachment Decisions</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr><th>Filename</th><th>Score</th><th>Decision</th><th>Reason</th></tr>
+            </thead>
+            <tbody>
+                {% for log in receipt.attachment_logs %}
+                <tr>
+                    <td>{{ log.filename }}</td>
+                    <td>{{ log.score }}</td>
+                    <td><span class="badge {% if log.decision == 'selected' %}bg-success{% else %}bg-secondary{% endif %}">{{ log.decision }}</span></td>
+                    <td><small>{{ log.reason }}</small></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if receipt.status.value == 'needs_review' %}
+<div class="card border-warning mb-3">
+    <div class="card-header bg-warning">⚠️ Needs Review - Assign Card</div>
+    <div class="card-body">
+        <form onsubmit="resolveCard(event, {{ receipt.id }})">
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label">Assign to Card</label>
+                    <select name="card_id" class="form-select">
+                        <option value="">— Select card —</option>
+                        {% for card in cards %}
+                        <option value="{{ card.id }}">{{ card.display_name }} {% if card.last4 %}(****{{ card.last4 }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-warning">Assign & Mark Processed</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<div id="action-result" class="mt-2"></div>
+{% endblock %}
