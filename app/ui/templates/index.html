@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Receipts - Email Receipts{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Receipts <span class="badge bg-secondary">{{ total }}</span></h2>
+    <button class="btn btn-primary" onclick="syncGmail()">🔄 Sync Gmail</button>
+</div>
+
+<form method="get" action="/ui/receipts" class="mb-3">
+    <div class="d-flex gap-2">
+        <select name="status" class="form-select w-auto" onchange="this.form.submit()">
+            <option value="all" {% if status_filter == "all" or not status_filter %}selected{% endif %}>All Statuses</option>
+            {% for s in statuses %}
+            <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s.replace('_', ' ').title() }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-outline-secondary">Filter</button>
+    </div>
+</form>
+
+<div class="table-responsive">
+    <table class="table table-hover table-sm">
+        <thead class="table-dark">
+            <tr>
+                <th>ID</th>
+                <th>Subject</th>
+                <th>Merchant</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Status</th>
+                <th>Card</th>
+                <th>Confidence</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in receipts %}
+            <tr>
+                <td>{{ r.id }}</td>
+                <td class="text-truncate" style="max-width:200px" title="{{ r.subject }}">{{ r.subject or '—' }}</td>
+                <td>{{ r.merchant or '—' }}</td>
+                <td>{% if r.amount is not none %}{{ "%.2f"|format(r.amount) }} {{ r.currency }}{% else %}—{% endif %}</td>
+                <td>{{ r.purchase_date or '—' }}</td>
+                <td><span class="badge badge-{{ r.status.value }}">{{ r.status.value.replace('_',' ') }}</span></td>
+                <td>{% if r.physical_card %}{{ r.physical_card.display_name }}{% else %}—{% endif %}</td>
+                <td>{% if r.confidence is not none %}{{ "%.0f"|format(r.confidence * 100) }}%{% else %}—{% endif %}</td>
+                <td><a href="/ui/receipts/{{ r.id }}" class="btn btn-sm btn-outline-primary">View</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="9" class="text-center text-muted">No receipts found</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div id="sync-result" class="mt-2"></div>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Needs Review - Email Receipts{% endblock %}
+{% block content %}
+<h2>Needs Review <span class="badge bg-warning text-dark">{{ receipts|length }}</span></h2>
+<p class="text-muted">These receipts have low confidence scores and require manual verification.</p>
+
+{% if receipts %}
+<div class="table-responsive">
+    <table class="table table-hover table-sm">
+        <thead class="table-dark">
+            <tr>
+                <th>ID</th>
+                <th>Subject</th>
+                <th>Sender</th>
+                <th>Merchant</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Confidence</th>
+                <th>Received</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in receipts %}
+            <tr>
+                <td>{{ r.id }}</td>
+                <td class="text-truncate" style="max-width:180px" title="{{ r.subject }}">{{ r.subject or '—' }}</td>
+                <td class="text-truncate" style="max-width:150px" title="{{ r.sender }}">{{ r.sender or '—' }}</td>
+                <td>{{ r.merchant or '—' }}</td>
+                <td>{% if r.amount is not none %}{{ "%.2f"|format(r.amount) }} {{ r.currency }}{% else %}—{% endif %}</td>
+                <td>{{ r.purchase_date or '—' }}</td>
+                <td>
+                    {% if r.confidence is not none %}
+                    <div class="progress" style="min-width:60px">
+                        <div class="progress-bar bg-warning" role="progressbar"
+                             style="width:{{ (r.confidence * 100)|int }}%">
+                            {{ "%.0f"|format(r.confidence * 100) }}%
+                        </div>
+                    </div>
+                    {% else %}—{% endif %}
+                </td>
+                <td>{{ r.received_at.strftime('%Y-%m-%d') if r.received_at else '—' }}</td>
+                <td><a href="/ui/receipts/{{ r.id }}" class="btn btn-sm btn-outline-warning">Review</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-success">✅ No receipts need review. Everything looks good!</div>
+{% endif %}
+{% endblock %}
