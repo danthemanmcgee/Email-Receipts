@@ -19,3 +19,16 @@ python-multipart==0.0.22
 aiofiles==23.2.1
 pytest==8.2.2
 pytest-asyncio==0.23.7
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+alembic
+pydantic
+python-dotenv
+redis
+celery
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
