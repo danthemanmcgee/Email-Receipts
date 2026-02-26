@@ -49,6 +49,7 @@ def process_receipt_task(self, gmail_message_id: str):
     from app.models.receipt import Receipt, ReceiptStatus, AttachmentLog
     from app.services.gmail_service import (
         build_gmail_service,
+        build_gmail_service_from_db,
         get_message_detail,
         get_attachment_bytes,
         extract_attachments_from_message,
@@ -82,9 +83,7 @@ def process_receipt_task(self, gmail_message_id: str):
             db.commit()
 
         try:
-            gmail = build_gmail_service(
-                settings.GMAIL_CREDENTIALS_FILE, settings.GMAIL_TOKEN_FILE
-            )
+            gmail = build_gmail_service_from_db(db)
             message = get_message_detail(gmail, gmail_message_id) if gmail else None
 
             if not message:
@@ -130,18 +129,19 @@ def process_receipt_task(self, gmail_message_id: str):
                 db.add(log)
 
             extraction_result = None
+            pdf_bytes_cache = None
             if selected:
                 # Find the matching attachment_id
                 att_info = next(
                     (a for a in filtered if a["filename"] == selected.filename), None
                 )
                 if att_info:
-                    pdf_bytes = get_attachment_bytes(
+                    pdf_bytes_cache = get_attachment_bytes(
                         gmail, gmail_message_id, att_info["attachment_id"]
                     )
-                    if pdf_bytes:
-                        receipt.content_hash = hashlib.sha256(pdf_bytes).hexdigest()
-                        extraction_result = extract_from_pdf_bytes(pdf_bytes)
+                    if pdf_bytes_cache:
+                        receipt.content_hash = hashlib.sha256(pdf_bytes_cache).hexdigest()
+                        extraction_result = extract_from_pdf_bytes(pdf_bytes_cache)
 
             if not extraction_result:
                 body_text = extract_body_text(message)
@@ -163,7 +163,38 @@ def process_receipt_task(self, gmail_message_id: str):
             if card:
                 receipt.physical_card_id = card.id
 
-            # Determine status
+            # Drive upload
+            from app.services.gmail_service import build_drive_service_from_db
+            from app.services.drive_service import build_drive_path, upload_pdf_to_drive
+
+            drive = build_drive_service_from_db(db)
+            if drive is None:
+                # Drive not connected: flag for review so user can upload manually
+                notes = receipt.extraction_notes or ""
+                receipt.extraction_notes = (notes + "; drive_not_connected").lstrip("; ")
+                receipt.status = ReceiptStatus.needs_review
+                if gmail:
+                    apply_label(gmail, gmail_message_id, LABEL_MAP["needs_review"])
+                db.commit()
+                return {"status": receipt.status.value, "receipt_id": receipt.id, "reason": "drive_not_connected"}
+
+            if receipt.content_hash and selected:
+                folder_path, filename = build_drive_path(
+                    card=card,
+                    purchase_date=receipt.purchase_date,
+                    merchant=receipt.merchant,
+                    amount=receipt.amount,
+                    currency=receipt.currency,
+                    gmail_message_id=gmail_message_id,
+                    root_folder=settings.DRIVE_ROOT_FOLDER,
+                )
+                if pdf_bytes_cache:
+                    file_id = upload_pdf_to_drive(drive, pdf_bytes_cache, folder_path, filename)
+                    if file_id:
+                        receipt.drive_file_id = file_id
+                        receipt.drive_path = f"{folder_path}/{filename}"
+
+            # Determine final status
             if receipt.confidence >= settings.CONFIDENCE_THRESHOLD:
                 receipt.status = ReceiptStatus.processed
                 if gmail:

@@ -13,18 +13,15 @@ def run_cleanup():
     """Delete old receipts based on retention policy."""
     from app.database import SessionLocal
     from app.models.receipt import Receipt, ReceiptStatus
-    from app.services.gmail_service import build_gmail_service
+    from app.services.gmail_service import build_gmail_service_from_db
 
     now = datetime.utcnow()
     processed_cutoff = now - timedelta(days=settings.RETENTION_DAYS_PROCESSED)
     review_cutoff = now - timedelta(days=settings.RETENTION_DAYS_REVIEW)
 
-    gmail = build_gmail_service(
-        settings.GMAIL_CREDENTIALS_FILE, settings.GMAIL_TOKEN_FILE
-    )
-
-    deleted_count = 0
     with SessionLocal() as db:
+        gmail = build_gmail_service_from_db(db)
+        deleted_count = 0
         # Processed receipts older than retention
         old_processed = (
             db.query(Receipt)

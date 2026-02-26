@@ -14,6 +14,7 @@ Email Receipts polls your Gmail inbox for receipt emails, extracts key data (mer
 - Google Drive file organization
 - Needs-review queue for low-confidence extractions
 - Bootstrap 5 admin UI
+- **Independent Gmail and Drive Google accounts** — read from inbox A, store in Drive B
 
 ## Quick Start (Docker)
 
@@ -21,17 +22,10 @@ Email Receipts polls your Gmail inbox for receipt emails, extracts key data (mer
 
 ```bash
 cp .env.example .env
-# Edit .env if needed
+# Edit .env — set GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, APP_SECRET_KEY
 ```
 
-### 2. Add Google credentials (optional for local testing)
-
-```bash
-mkdir -p secrets
-# Place your credentials.json in secrets/
-```
-
-### 3. Start services
+### 2. Start services
 
 ```bash
 docker compose up --build
@@ -40,51 +34,88 @@ docker compose up --build
 The app will be available at http://localhost:8000
 
 - **UI**: http://localhost:8000/ui
+- **Settings**: http://localhost:8000/ui/settings
 - **API Docs**: http://localhost:8000/docs
 - **Health**: http://localhost:8000/health
 
-### 4. Run database migrations
+### 3. Run database migrations
 
 ```bash
 docker compose exec app alembic upgrade head
 ```
 
+### 4. Connect Google accounts
+
+Open http://localhost:8000/ui/settings and connect both accounts:
+
+| Card | Account | What it does |
+|------|---------|--------------|
+| 📬 Gmail Connection | Your source inbox (e.g. `receipts@gmail.com`) | Reads forwarded purchase emails |
+| 📁 Drive Connection | Your storage account (e.g. `storage@gmail.com`) | Uploads canonical receipt PDFs |
+
+Gmail and Drive **may be the same account or different accounts** — this is fully supported.
+
 ## Google OAuth Setup
 
-### Enable APIs
+### 1. Enable APIs in Google Cloud Console
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create or select a project
 3. Enable **Gmail API** and **Google Drive API**
-4. Create OAuth 2.0 credentials (Desktop app type)
-5. Download `credentials.json` → place in `./secrets/credentials.json`
+4. Navigate to **APIs & Services → Credentials**
+5. Click **Create Credentials → OAuth 2.0 Client ID**
+6. Choose **Web application** type
+7. Add `http://localhost:8000/auth/google/callback` to **Authorised redirect URIs**
+8. Copy the **Client ID** and **Client Secret** into your `.env`:
 
-### Authorize
-
-On first run, the worker will attempt to open a browser for OAuth. For headless servers:
-
-```bash
-# Run locally first to generate token.json
-python -c "
-from app.services.gmail_service import build_gmail_service
-build_gmail_service('secrets/credentials.json', 'secrets/token.json')
-"
-# Then copy secrets/token.json to your server
+```env
+GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/auth/google/callback
+APP_SECRET_KEY=generate-a-strong-random-string
 ```
+
+### 2. Connect accounts via UI
+
+1. Open http://localhost:8000/ui/settings
+2. Click **Connect Gmail** — sign in with your *source inbox* account
+3. Click **Connect Drive** — sign in with your *storage Drive* account
+4. Both connections are saved independently in the database
+
+### 3. OAuth scopes used
+
+| Connection | Scopes |
+|-----------|--------|
+| Gmail | `gmail.readonly`, `gmail.modify`, `openid`, `userinfo.email` |
+| Drive | `drive.file`, `openid`, `userinfo.email` |
+
+Tokens are stored per-connection in the `google_connections` table and refreshed automatically.
+
+### Connecting Gmail and Drive to different Google accounts
+
+This is the primary use case:
+
+1. **Connect Gmail** with account A (your forwarding inbox)
+2. **Connect Drive** with account B (your file storage)
+
+The Settings page will show an informational notice when the two connected emails differ — this is normal and expected.
 
 ## Gmail Label Setup
 
 Create these labels in Gmail for best results:
 - `receipt/new` — tag incoming receipts
-- `receipt/processed` — applied automatically
-- `receipt/needs-review` — applied for low-confidence
-- `receipt/failed` — applied on error
+- `receipt/processed` — applied automatically after successful processing
+- `receipt/needs-review` — applied for low-confidence or missing-Drive receipts
+- `receipt/failed` — applied on processing errors
 
 ## Running Sync & Cleanup Manually
 
 ```bash
-# Trigger Gmail sync
+# Trigger Gmail sync (requires Gmail connection)
 curl -X POST http://localhost:8000/gmail/sync
+
+# Check integration status
+curl http://localhost:8000/integrations/google/status
 
 # Trigger cleanup
 curl -X POST http://localhost:8000/jobs/cleanup
@@ -94,7 +125,7 @@ curl -X POST http://localhost:8000/jobs/cleanup
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/gmail/sync` | Trigger Gmail sync |
+| `POST` | `/gmail/sync` | Trigger Gmail sync (503 if Gmail not connected) |
 | `GET` | `/receipts` | List receipts (filters: status, date_from, date_to) |
 | `GET` | `/receipts/{id}` | Get receipt detail |
 | `POST` | `/receipts/{id}/reprocess` | Reprocess a receipt |
@@ -104,21 +135,25 @@ curl -X POST http://localhost:8000/jobs/cleanup
 | `POST` | `/cards/{id}/aliases` | Add card alias |
 | `POST` | `/jobs/cleanup` | Run retention cleanup |
 | `GET` | `/health` | Health check |
+| `GET` | `/integrations/google/status` | Gmail + Drive connection status |
+| `GET` | `/auth/google/gmail/start` | Begin Gmail OAuth flow |
+| `GET` | `/auth/google/drive/start` | Begin Drive OAuth flow |
+| `GET` | `/auth/google/callback` | OAuth callback (both flows) |
 
 ## Architecture
 
 ```
-Gmail API → Celery Worker → PostgreSQL
-                ↓
-    Attachment Scoring (PDF selection)
-                ↓
-    Text/PDF Extraction (regex)
-                ↓
-    Card Resolution (alias lookup)
-                ↓
-    Google Drive Upload
-                ↓
-    FastAPI + Jinja2 UI
+Gmail API (account A) → Celery Worker → PostgreSQL
+                            ↓
+            Attachment Scoring (PDF selection)
+                            ↓
+            Text/PDF Extraction (regex)
+                            ↓
+            Card Resolution (alias lookup)
+                            ↓
+       Google Drive Upload (account B)
+                            ↓
+            FastAPI + Jinja2 UI
 ```
 
 ### Components
@@ -126,18 +161,51 @@ Gmail API → Celery Worker → PostgreSQL
 - **FastAPI** — REST API + Jinja2 template UI
 - **Celery + Redis** — Async task queue for Gmail polling and processing
 - **PostgreSQL** — Receipt storage with Alembic migrations
-- **Gmail API** — Email fetching and labeling
-- **Google Drive API** — PDF file storage
+- **Gmail API** — Email fetching and labeling (separate OAuth connection)
+- **Google Drive API** — PDF file storage (separate OAuth connection)
 - **PyPDF2** — PDF text extraction
 
 ### Processing Pipeline
 
-1. `sync_gmail` task polls Gmail for new messages
+1. `sync_gmail` task polls Gmail for new messages using the **gmail** connection
 2. Each new message queues a `process_receipt_task`
 3. Task fetches email, scores PDF attachments, selects best PDF
 4. Extracts merchant/date/amount/card via regex
 5. Resolves card using alias table
-6. Sets status to `processed` (confidence ≥ threshold) or `needs_review`
+6. Uploads canonical PDF to Drive using the **drive** connection
+   - If Drive is not connected: receipt is marked `needs_review` with reason `drive_not_connected`
+7. Sets status to `processed` (confidence ≥ threshold) or `needs_review`
+
+## Troubleshooting
+
+### Gmail sync returns 503 "gmail_not_connected"
+
+The Gmail OAuth connection has not been set up.
+
+1. Ensure `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are set in `.env`
+2. Run `docker compose restart app`
+3. Visit http://localhost:8000/ui/settings and click **Connect Gmail**
+
+### Receipts land in needs-review with "drive_not_connected"
+
+The Drive OAuth connection has not been set up or has expired.
+
+1. Visit http://localhost:8000/ui/settings and click **Connect Drive** (or **Reconnect Drive**)
+2. After reconnecting, use `POST /receipts/{id}/reprocess` to reprocess the affected receipts
+
+### Both accounts show "Not connected" after restart
+
+OAuth tokens are stored in the database and persist across restarts automatically.
+If tokens are lost, reconnect via the Settings page.
+
+### "Token exchange failed" during OAuth
+
+- Ensure the redirect URI in Google Cloud Console exactly matches `GOOGLE_OAUTH_REDIRECT_URI` in `.env`
+- Ensure the OAuth app is not in "Testing" mode with restricted test users (or add your account as a test user)
+
+### Migrating from single-connection setup
+
+If you previously used a `token.json` file with combined Gmail + Drive scopes, the app will continue to use that file as a fallback until you connect accounts via the Settings page. Once you connect via Settings, the DB tokens take priority.
 
 ## Running Tests
 
@@ -154,11 +222,16 @@ See `.env.example` for all environment variables.
 |----------|---------|-------------|
 | `DATABASE_URL` | postgres://... | PostgreSQL connection |
 | `REDIS_URL` | redis://... | Redis connection |
-| `GMAIL_CREDENTIALS_FILE` | /secrets/credentials.json | OAuth credentials |
-| `GMAIL_TOKEN_FILE` | /secrets/token.json | OAuth token |
+| `GOOGLE_OAUTH_CLIENT_ID` | — | OAuth client ID (web app type) |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | — | OAuth client secret |
+| `GOOGLE_OAUTH_REDIRECT_URI` | http://localhost:8000/auth/google/callback | OAuth redirect URI |
+| `APP_SECRET_KEY` | change-me | Secret key for OAuth state signing |
+| `GMAIL_CREDENTIALS_FILE` | /secrets/credentials.json | Legacy file-based OAuth credentials |
+| `GMAIL_TOKEN_FILE` | /secrets/token.json | Legacy file-based OAuth token (fallback) |
 | `GMAIL_POLL_INTERVAL_SECONDS` | 300 | Polling interval |
 | `DRIVE_ROOT_FOLDER` | Receipts | Drive folder root |
 | `CONFIDENCE_THRESHOLD` | 0.75 | Min confidence for auto-process |
 | `RETENTION_DAYS_PROCESSED` | 45 | Days to keep processed receipts |
 | `RETENTION_DAYS_REVIEW` | 90 | Days to keep review/failed receipts |
 | `MAX_ATTACHMENT_SIZE_MB` | 25 | Max PDF attachment size |
+

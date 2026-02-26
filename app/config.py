@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     RETENTION_DAYS_REVIEW: int = 90
     MAX_ATTACHMENT_SIZE_MB: int = 25
 
+    # Google OAuth (required for web-based connect flow)
+    GOOGLE_OAUTH_CLIENT_ID: str = ""
+    GOOGLE_OAUTH_CLIENT_SECRET: str = ""
+    GOOGLE_OAUTH_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
+    APP_SECRET_KEY: str = "change-me-in-production"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

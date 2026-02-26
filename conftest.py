@@ -10,6 +10,7 @@ from sqlalchemy.orm.state import InstanceState  # noqa: E402
 # Import all models to register them with the mapper
 from app.models.card import PhysicalCard, CardAlias  # noqa: E402, F401
 from app.models.receipt import Receipt, AttachmentLog  # noqa: E402, F401
+from app.models.integration import GoogleConnection  # noqa: E402, F401
 
 # Configure all mappers so InstrumentedAttribute.impl is populated
 configure_mappers()
@@ -27,3 +28,4 @@ def _patched_new(cls, *args, **kwargs):
 # Apply patch to models used in tests with __new__
 PhysicalCard.__new__ = staticmethod(_patched_new)
 CardAlias.__new__ = staticmethod(_patched_new)
+GoogleConnection.__new__ = staticmethod(_patched_new)

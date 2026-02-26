@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Settings — Email Receipts{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col">
+    <h2>Google Integrations</h2>
+    <p class="text-muted">Gmail and Google Drive may be connected to <strong>different</strong> Google accounts.</p>
+  </div>
+</div>
+
+{% if accounts_differ %}
+<div class="alert alert-info d-flex align-items-center" role="alert">
+  <svg class="bi flex-shrink-0 me-2" width="20" height="20" fill="currentColor" aria-hidden="true">
+    <use xlink:href="#info-circle-fill"/>
+  </svg>
+  <div>
+    <strong>Informational:</strong> Gmail is connected as
+    <strong>{{ gmail_conn.google_account_email }}</strong> and Drive as
+    <strong>{{ drive_conn.google_account_email }}</strong>.
+    This is intentional if you forward emails from one account and store files in another.
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+
+  <!-- Gmail Connection Card -->
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center gap-2">
+        <span>📬</span>
+        <strong>Gmail Connection</strong>
+        {% if gmail_conn %}
+          <span class="badge bg-success ms-auto">Connected</span>
+        {% else %}
+          <span class="badge bg-secondary ms-auto">Not connected</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if gmail_conn %}
+          <p class="mb-1"><strong>Account:</strong> {{ gmail_conn.google_account_email or "Unknown" }}</p>
+          <p class="mb-1 text-muted small">
+            Connected: {{ gmail_conn.connected_at.strftime("%Y-%m-%d %H:%M UTC") if gmail_conn.connected_at else "—" }}
+          </p>
+          <p class="mb-0 text-muted small">
+            Scopes: gmail.readonly, gmail.modify
+          </p>
+        {% else %}
+          <p class="text-muted">No Gmail account connected. Connect one to start polling for new receipt emails.</p>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <a href="/auth/google/gmail/start" class="btn btn-primary btn-sm">
+          {% if gmail_conn %}🔄 Reconnect Gmail{% else %}🔗 Connect Gmail{% endif %}
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drive Connection Card -->
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center gap-2">
+        <span>📁</span>
+        <strong>Google Drive Connection</strong>
+        {% if drive_conn %}
+          <span class="badge bg-success ms-auto">Connected</span>
+        {% else %}
+          <span class="badge bg-secondary ms-auto">Not connected</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if drive_conn %}
+          <p class="mb-1"><strong>Account:</strong> {{ drive_conn.google_account_email or "Unknown" }}</p>
+          <p class="mb-1 text-muted small">
+            Connected: {{ drive_conn.connected_at.strftime("%Y-%m-%d %H:%M UTC") if drive_conn.connected_at else "—" }}
+          </p>
+          <p class="mb-0 text-muted small">
+            Scopes: drive.file
+          </p>
+        {% else %}
+          <p class="text-muted">No Drive account connected. Receipts without a Drive connection will be placed in the needs-review queue.</p>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <a href="/auth/google/drive/start" class="btn btn-primary btn-sm">
+          {% if drive_conn %}🔄 Reconnect Drive{% else %}🔗 Connect Drive{% endif %}
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

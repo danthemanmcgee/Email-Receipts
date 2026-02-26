@@ -4,9 +4,24 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Legacy combined scopes (kept for file-based fallback only)
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/drive.file",
+]
+
+# Separate scope sets for distinct connections
+GMAIL_ONLY_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+]
+
+DRIVE_ONLY_SCOPES = [
+    "https://www.googleapis.com/auth/drive.file",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
 ]
 
 LABEL_MAP = {
@@ -214,3 +229,118 @@ def extract_body_text(message: dict) -> str:
         return ""
 
     return walk_parts(parts)
+
+
+def _credentials_from_connection(conn) -> Optional[object]:
+    """Build a google.oauth2.credentials.Credentials from a GoogleConnection record."""
+    from app.config import get_settings
+    settings = get_settings()
+    try:
+        from google.oauth2.credentials import Credentials
+
+        scopes = conn.scopes.split(",") if conn.scopes else None
+        return Credentials(
+            token=conn.access_token,
+            refresh_token=conn.refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=settings.GOOGLE_OAUTH_CLIENT_ID,
+            client_secret=settings.GOOGLE_OAUTH_CLIENT_SECRET,
+            scopes=scopes,
+            expiry=conn.token_expiry,
+        )
+    except Exception as exc:
+        logger.error("Failed to build credentials from connection: %s", exc)
+        return None
+
+
+def _refresh_and_persist(creds, conn, db) -> None:
+    """Refresh expired credentials and persist updated tokens to DB."""
+    try:
+        from google.auth.transport.requests import Request
+
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            conn.access_token = creds.token
+            conn.token_expiry = creds.expiry
+            db.commit()
+    except Exception as exc:
+        logger.warning("Token refresh failed: %s", exc)
+
+
+def build_gmail_service_from_db(db):
+    """Build Gmail API service using the stored gmail connection tokens.
+
+    Falls back to file-based credentials if no DB connection exists (backward compat).
+    Returns None if no credentials are available.
+    """
+    from app.models.integration import GoogleConnection, ConnectionType
+
+    conn = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.connection_type == ConnectionType.gmail,
+            GoogleConnection.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if conn and conn.refresh_token:
+        creds = _credentials_from_connection(conn)
+        if creds:
+            _refresh_and_persist(creds, conn, db)
+            try:
+                from googleapiclient.discovery import build as google_build
+
+                return google_build("gmail", "v1", credentials=creds)
+            except Exception as exc:
+                logger.error("Failed to build Gmail service from DB credentials: %s", exc)
+                return None
+
+    # Backward-compat fallback: try file-based token
+    from app.config import get_settings
+    settings = get_settings()
+    if os.path.exists(settings.GMAIL_TOKEN_FILE):
+        logger.info("No DB gmail connection; falling back to file-based token")
+        return build_gmail_service(settings.GMAIL_CREDENTIALS_FILE, settings.GMAIL_TOKEN_FILE)
+
+    return None
+
+
+def build_drive_service_from_db(db):
+    """Build Drive API service using the stored drive connection tokens.
+
+    Falls back to file-based credentials if no DB connection exists (backward compat).
+    Returns None if no credentials are available.
+    """
+    from app.models.integration import GoogleConnection, ConnectionType
+
+    conn = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.connection_type == ConnectionType.drive,
+            GoogleConnection.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if conn and conn.refresh_token:
+        creds = _credentials_from_connection(conn)
+        if creds:
+            _refresh_and_persist(creds, conn, db)
+            try:
+                from googleapiclient.discovery import build as google_build
+
+                return google_build("drive", "v3", credentials=creds)
+            except Exception as exc:
+                logger.error("Failed to build Drive service from DB credentials: %s", exc)
+                return None
+
+    # Backward-compat fallback: try file-based token
+    from app.config import get_settings
+    settings = get_settings()
+    if os.path.exists(settings.GMAIL_TOKEN_FILE):
+        logger.info("No DB drive connection; falling back to file-based token")
+        return build_drive_service(settings.GMAIL_CREDENTIALS_FILE, settings.GMAIL_TOKEN_FILE)
+
+    return None
+
