@@ -154,17 +154,34 @@ def apply_label(service, message_id: str, label_name: str) -> bool:
     if not service:
         return False
     try:
-        # Get or create label
+        # Get or create label (idempotent: handle 409 conflicts)
         labels = service.users().labels().list(userId="me").execute().get("labels", [])
         label_id = next((l["id"] for l in labels if l["name"] == label_name), None)
         if not label_id:
-            new_label = (
-                service.users()
-                .labels()
-                .create(userId="me", body={"name": label_name})
-                .execute()
-            )
-            label_id = new_label["id"]
+            try:
+                new_label = (
+                    service.users()
+                    .labels()
+                    .create(userId="me", body={"name": label_name})
+                    .execute()
+                )
+                label_id = new_label["id"]
+            except Exception as create_exc:
+                # 409 Conflict means the label already exists (race condition or
+                # nested label created outside this flow). Re-fetch to get the ID.
+                _status = getattr(getattr(create_exc, "resp", None), "status", None)
+                if _status == 409 or "409" in str(create_exc):
+                    labels = (
+                        service.users().labels().list(userId="me").execute().get("labels", [])
+                    )
+                    label_id = next(
+                        (l["id"] for l in labels if l["name"] == label_name), None
+                    )
+                else:
+                    raise
+        if not label_id:
+            logger.warning("Could not obtain label ID for %s; skipping apply", label_name)
+            return False
 
         service.users().messages().modify(
             userId="me",
