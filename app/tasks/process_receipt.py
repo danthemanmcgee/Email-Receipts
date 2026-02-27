@@ -10,17 +10,33 @@ settings = get_settings()
 
 
 @celery_app.task(name="app.tasks.process_receipt.sync_gmail", bind=True, max_retries=3)
-def sync_gmail(self):
+def sync_gmail(self, job_run_id: int = None):
     """Poll Gmail for new receipts and queue individual processing tasks."""
     try:
         from app.services.gmail_service import build_gmail_service_from_db, list_new_messages
         from app.database import SessionLocal
         from app.models.receipt import Receipt
+        from app.models.job import JobRun, JobStatus
+        from datetime import datetime as dt
 
         with SessionLocal() as db:
+            # Update job run to running
+            if job_run_id:
+                job_run = db.query(JobRun).filter(JobRun.id == job_run_id).first()
+                if job_run:
+                    job_run.status = JobStatus.running
+                    db.commit()
+
             gmail = build_gmail_service_from_db(db)
             if not gmail:
                 logger.warning("Gmail service unavailable, skipping sync")
+                if job_run_id:
+                    job_run = db.query(JobRun).filter(JobRun.id == job_run_id).first()
+                    if job_run:
+                        job_run.status = JobStatus.failed
+                        job_run.error_message = "Gmail service unavailable — no credentials"
+                        job_run.completed_at = dt.utcnow()
+                        db.commit()
                 return {"status": "skipped", "reason": "no_credentials"}
 
             messages = list_new_messages(gmail)
@@ -34,9 +50,31 @@ def sync_gmail(self):
                     process_receipt_task.delay(mid)
                     queued += 1
 
+            if job_run_id:
+                job_run = db.query(JobRun).filter(JobRun.id == job_run_id).first()
+                if job_run:
+                    job_run.status = JobStatus.completed
+                    job_run.details = f"Found {len(messages)} messages, queued {queued} for processing"
+                    job_run.completed_at = dt.utcnow()
+                    db.commit()
+
         return {"status": "ok", "queued": queued}
     except Exception as exc:
         logger.error("sync_gmail failed: %s", exc)
+        try:
+            from app.database import SessionLocal
+            from app.models.job import JobRun, JobStatus
+            from datetime import datetime as dt
+            if job_run_id:
+                with SessionLocal() as db:
+                    job_run = db.query(JobRun).filter(JobRun.id == job_run_id).first()
+                    if job_run:
+                        job_run.status = JobStatus.failed
+                        job_run.error_message = str(exc)
+                        job_run.completed_at = dt.utcnow()
+                        db.commit()
+        except Exception:
+            pass
         raise self.retry(exc=exc, countdown=60)
 
 
@@ -213,6 +251,7 @@ def process_receipt_task(self, gmail_message_id: str):
             # Determine final status
             if receipt.confidence >= settings.CONFIDENCE_THRESHOLD:
                 receipt.status = ReceiptStatus.processed
+                receipt.processed_at = datetime.utcnow()
                 if gmail:
                     apply_label(gmail, gmail_message_id, LABEL_MAP["processed"])
             else:

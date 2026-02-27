@@ -7,9 +7,10 @@ async function syncGmail() {
         const el = document.getElementById('sync-result');
         if (el) {
             if (data.task_id) {
-                el.innerHTML = `<div class="alert alert-success">Sync queued (task: ${data.task_id})</div>`;
+                el.innerHTML = `<div class="alert alert-success alert-dismissible">Sync queued (task: ${data.task_id}) <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
+                showJobStatusBanner();
             } else {
-                el.innerHTML = `<div class="alert alert-info">Sync status: ${JSON.stringify(data)}</div>`;
+                el.innerHTML = `<div class="alert alert-info alert-dismissible">Sync status: ${JSON.stringify(data)} <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
             }
         }
     } catch (e) {
@@ -26,7 +27,7 @@ async function reprocess(receiptId) {
         const resp = await fetch(`/receipts/${receiptId}/reprocess`, { method: 'POST' });
         const data = await resp.json();
         const el = document.getElementById('action-result');
-        if (el) el.innerHTML = `<div class="alert alert-info">Reprocess queued: ${JSON.stringify(data)}</div>`;
+        if (el) el.innerHTML = `<div class="alert alert-info">Reprocess queued: task ${data.task_id || JSON.stringify(data)}</div>`;
     } catch (e) {
         const el = document.getElementById('action-result');
         if (el) el.innerHTML = `<div class="alert alert-danger">Error: ${e.message}</div>`;
@@ -50,3 +51,91 @@ async function resolveCard(event, receiptId) {
         alert('Error: ' + e.message);
     }
 }
+
+async function saveExtraction(event, receiptId) {
+    event.preventDefault();
+    const form = event.target;
+    const el = document.getElementById('edit-result');
+    const payload = {};
+    const merchant = form.merchant.value.trim();
+    if (merchant) payload.merchant = merchant;
+    const purchaseDate = form.purchase_date.value;
+    if (purchaseDate) payload.purchase_date = purchaseDate;
+    const amount = form.amount.value;
+    if (amount) payload.amount = parseFloat(amount);
+    const currency = form.currency.value.trim();
+    if (currency) payload.currency = currency;
+    const cardLast4 = form.card_last4_seen.value.trim();
+    if (cardLast4) payload.card_last4_seen = cardLast4;
+    try {
+        const resp = await fetch(`/receipts/${receiptId}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        });
+        if (resp.ok) {
+            if (el) {
+                el.className = 'mt-2 small text-success';
+                el.textContent = '✓ Saved. Reload to see updated values.';
+            }
+            // Collapse edit form
+            const collapseEl = document.getElementById('editForm');
+            if (collapseEl) bootstrap.Collapse.getInstance(collapseEl)?.hide();
+        } else {
+            const err = await resp.json();
+            if (el) {
+                el.className = 'mt-2 small text-danger';
+                el.textContent = '✗ ' + (err.detail || 'Save failed.');
+            }
+        }
+    } catch (e) {
+        if (el) {
+            el.className = 'mt-2 small text-danger';
+            el.textContent = '✗ Error: ' + e.message;
+        }
+    }
+}
+
+// ── Job Status Banner ─────────────────────────────────────────────────────
+
+const JOB_STATUS_ICONS = {running: '⏳', pending: '🕐', completed: '✅', failed: '❌'};
+const JOB_TYPE_LABELS = {gmail_sync: 'Gmail Sync', process_receipt: 'Process Receipt', reprocess_receipt: 'Reprocess Receipt'};
+
+function showJobStatusBanner() {
+    const banner = document.getElementById('job-status-banner');
+    if (banner) {
+        banner.style.display = '';
+        loadJobStatus();
+    }
+}
+
+async function loadJobStatus() {
+    const body = document.getElementById('job-status-body');
+    if (!body) return;
+    try {
+        const resp = await fetch('/jobs/recent?limit=5');
+        if (!resp.ok) return;
+        const jobs = await resp.json();
+        if (!jobs.length) {
+            body.innerHTML = '<div class="text-muted small">No recent jobs.</div>';
+            return;
+        }
+        body.innerHTML = jobs.map(j => {
+            const icon = JOB_STATUS_ICONS[j.status] || '❓';
+            const label = JOB_TYPE_LABELS[j.job_type] || j.job_type;
+            const started = j.started_at ? new Date(j.started_at).toLocaleString() : '';
+            const errHtml = j.error_message ? `<br><small class="text-danger">${j.error_message}</small>` : '';
+            const detailHtml = j.details ? `<br><small class="text-muted">${j.details}</small>` : '';
+            return `<div class="d-flex align-items-center gap-2 mb-1">
+                <span>${icon}</span>
+                <span class="fw-semibold small">${label}</span>
+                <span class="badge bg-${j.status === 'completed' ? 'success' : j.status === 'failed' ? 'danger' : j.status === 'running' ? 'info' : 'secondary'} small">${j.status}</span>
+                <span class="text-muted small">${started}</span>
+                ${errHtml}${detailHtml}
+            </div>`;
+        }).join('');
+    } catch (e) {
+        if (body) body.innerHTML = '<div class="text-muted small">Could not load job status.</div>';
+    }
+}
+

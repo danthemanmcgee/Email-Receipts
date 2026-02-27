@@ -8,6 +8,87 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Forwarded email cleanup
+# ---------------------------------------------------------------------------
+
+# Patterns that mark the start of a forward header block
+_FORWARD_HEADER_RE = re.compile(
+    r"^[ \t]*-{3,}[ \t]*(?:forwarded message|original message|begin forwarded message).*$"
+    r"|^begin forwarded message[:\s]*$"
+    r"|^[ \t]*={3,}[ \t]*(?:forwarded message|original message).*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Common "From: ... Subject: ..." style forward intro lines
+_FORWARD_INTRO_RE = re.compile(
+    r"^(?:from|date|to|subject|sent|cc)\s*:.*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Signature / disclaimer block patterns
+_SIGNATURE_RE = re.compile(
+    r"^\s*(?:--\s*$|_{3,}|={3,}|confidentiality notice|disclaimer|this email|"
+    r"this message|unsubscribe|manage (?:your )?(?:preferences|subscriptions)|"
+    r"©\s*\d{4}|all rights reserved)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Reply chain marker
+_REPLY_CHAIN_RE = re.compile(
+    r"^On .{5,100} wrote:\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def clean_forwarded_body(text: str) -> str:
+    """Strip forward headers, reply chains, and signature/disclaimer blocks.
+
+    Returns only the meaningful receipt-relevant content from a forwarded email
+    body.  The approach:
+    1. If a classic "--- Forwarded message ---" delimiter is found, extract
+       only the content *after* the delimiter (skipping the From/Date/Subject
+       header lines).
+    2. Strip trailing signature/disclaimer blocks.
+    3. Remove obvious reply-chain markers.
+    """
+    if not text:
+        return text
+
+    # 1. Find the innermost forwarded-message content block
+    fwd_match = _FORWARD_HEADER_RE.search(text)
+    if fwd_match:
+        body_after = text[fwd_match.end():]
+        # Skip the From/Date/To/Subject header lines that follow the delimiter
+        # (and any empty lines before them)
+        lines = body_after.splitlines()
+        content_lines = []
+        skip_headers = True
+        for line in lines:
+            if skip_headers:
+                if not line.strip():
+                    # blank line while in header-skip mode — keep skipping
+                    continue
+                if _FORWARD_INTRO_RE.match(line):
+                    continue
+                else:
+                    skip_headers = False
+            content_lines.append(line)
+        text = "\n".join(content_lines)
+
+    # 2. Trim at the first signature/disclaimer marker
+    sig_match = _SIGNATURE_RE.search(text)
+    if sig_match:
+        text = text[: sig_match.start()]
+
+    # 3. Trim at "On ... wrote:" reply marker
+    reply_match = _REPLY_CHAIN_RE.search(text)
+    if reply_match:
+        text = text[: reply_match.start()]
+
+    return text.strip()
+
+
 @dataclass
 class ExtractionResult:
     merchant: Optional[str] = None
@@ -109,6 +190,10 @@ def extract_from_text(text: str, source_type: str = "email_body") -> ExtractionR
     """Extract receipt fields from plain text."""
     result = ExtractionResult(source_type=source_type)
     fields_found = 0
+
+    # Clean forwarded/reply-chain boilerplate from email body text
+    if source_type == "email_body":
+        text = clean_forwarded_body(text)
 
     merchant = _parse_merchant(text)
     if merchant:
