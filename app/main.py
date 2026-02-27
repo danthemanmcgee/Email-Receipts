@@ -12,7 +12,6 @@ from app.models import receipt as receipt_models  # noqa: F401 - ensures models 
 from app.models import card as card_models  # noqa: F401
 from app.models import integration as integration_models  # noqa: F401
 from app.models import setting as setting_models  # noqa: F401
-from app.models import job as job_models  # noqa: F401
 
 app = FastAPI(title="Email Receipts", version="1.0.0")
 
@@ -122,9 +121,7 @@ async def ui_settings(request: Request):
     from app.database import SessionLocal
     from app.models.integration import GoogleConnection, ConnectionType
     from app.models.setting import AllowedSender
-    from app.models.card import PhysicalCard
     from app.services.settings_service import get_drive_root_folder
-    from sqlalchemy.orm import selectinload
 
     with SessionLocal() as db:
         gmail_conn = (
@@ -147,12 +144,6 @@ async def ui_settings(request: Request):
         drive_root_folder = get_drive_root_folder(db)
         from app.services.settings_service import get_drive_root_folder_id
         drive_root_folder_id = get_drive_root_folder_id(db)
-        cards = (
-            db.query(PhysicalCard)
-            .options(selectinload(PhysicalCard.aliases))
-            .order_by(PhysicalCard.display_name)
-            .all()
-        )
 
     accounts_differ = (
         gmail_conn is not None
@@ -172,6 +163,5 @@ async def ui_settings(request: Request):
             "drive_root_folder_id": drive_root_folder_id,
             "google_api_key": get_settings().GOOGLE_API_KEY,
             "google_client_id": get_settings().GOOGLE_OAUTH_CLIENT_ID,
-            "cards": cards,
         },
     )

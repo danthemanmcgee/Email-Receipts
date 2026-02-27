@@ -31,12 +31,6 @@ class PhysicalCardCreate(PhysicalCardBase):
     pass
 
 
-class PhysicalCardUpdate(BaseModel):
-    display_name: Optional[str] = None
-    last4: Optional[str] = None
-    network: Optional[str] = None
-
-
 class PhysicalCardResponse(PhysicalCardBase):
     id: int
     created_at: datetime

@@ -6,21 +6,6 @@
     <button class="btn btn-primary" onclick="syncGmail()">🔄 Sync Gmail</button>
 </div>
 
-<div id="sync-result" class="mb-2"></div>
-
-<!-- Processing Status Banner -->
-<div id="job-status-banner" class="mb-3" style="display:none">
-    <div class="card border-info">
-        <div class="card-header bg-info bg-opacity-10 d-flex justify-content-between align-items-center py-2">
-            <strong>⚙️ Processing Status</strong>
-            <button type="button" class="btn-close btn-sm" onclick="document.getElementById('job-status-banner').style.display='none'"></button>
-        </div>
-        <div class="card-body p-2" id="job-status-body">
-            <div class="text-muted small">Loading…</div>
-        </div>
-    </div>
-</div>
-
 <form method="get" action="/ui/receipts" class="mb-3">
     <div class="d-flex gap-2">
         <select name="status" class="form-select w-auto" onchange="this.form.submit()">
@@ -45,7 +30,6 @@
                 <th>Status</th>
                 <th>Card</th>
                 <th>Confidence</th>
-                <th>Processed</th>
                 <th></th>
             </tr>
         </thead>
@@ -58,16 +42,16 @@
                 <td>{% if r.amount is not none %}{{ "%.2f"|format(r.amount) }} {{ r.currency }}{% else %}—{% endif %}</td>
                 <td>{{ r.purchase_date or '—' }}</td>
                 <td><span class="badge badge-{{ r.status.value }}">{{ r.status.value.replace('_',' ') }}</span></td>
-                <td>{% if r.physical_card %}<strong>{{ r.physical_card.display_name }}</strong>{% if r.physical_card.network %} <small class="text-muted">({{ r.physical_card.network }})</small>{% endif %}{% else %}—{% endif %}</td>
+                <td>{% if r.physical_card %}{{ r.physical_card.display_name }}{% else %}—{% endif %}</td>
                 <td>{% if r.confidence is not none %}{{ "%.0f"|format(r.confidence * 100) }}%{% else %}—{% endif %}</td>
-                <td class="text-muted small">{% if r.processed_at %}{{ r.processed_at.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}</td>
                 <td><a href="/ui/receipts/{{ r.id }}" class="btn btn-sm btn-outline-primary">View</a></td>
             </tr>
             {% else %}
-            <tr><td colspan="10" class="text-center text-muted">No receipts found</td></tr>
+            <tr><td colspan="9" class="text-center text-muted">No receipts found</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
+<div id="sync-result" class="mt-2"></div>
 {% endblock %}

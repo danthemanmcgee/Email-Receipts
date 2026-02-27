@@ -38,7 +38,6 @@ def _make_receipt(physical_card=None, status="processed"):
     r.drive_file_id = None
     r.drive_path = None
     r.content_hash = None
-    r.processed_at = None
     r.created_at = None
     r.updated_at = None
     return r

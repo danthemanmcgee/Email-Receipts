@@ -12,7 +12,6 @@ from app.models.card import PhysicalCard, CardAlias  # noqa: E402, F401
 from app.models.receipt import Receipt, AttachmentLog  # noqa: E402, F401
 from app.models.integration import GoogleConnection  # noqa: E402, F401
 from app.models.setting import AllowedSender, AppSetting  # noqa: E402, F401
-from app.models.job import JobRun  # noqa: E402, F401
 
 # Configure all mappers so InstrumentedAttribute.impl is populated
 configure_mappers()
@@ -35,4 +34,3 @@ AllowedSender.__new__ = staticmethod(_patched_new)
 AppSetting.__new__ = staticmethod(_patched_new)
 Receipt.__new__ = staticmethod(_patched_new)
 AttachmentLog.__new__ = staticmethod(_patched_new)
-JobRun.__new__ = staticmethod(_patched_new)
