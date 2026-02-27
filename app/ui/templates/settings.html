@@ -92,4 +92,183 @@
   </div>
 
 </div>
+
+<!-- Drive Folder Setting -->
+<div class="row g-4 mt-2">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <span>🗂️</span>
+        <strong>Google Drive Root Folder</strong>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-2">
+          Receipts are saved under this folder in Google Drive. Subfolders are created automatically
+          per card, year, and month.
+        </p>
+        <form id="driveFolderForm">
+          <div class="input-group">
+            <input
+              type="text"
+              id="driveFolderInput"
+              class="form-control"
+              value="{{ drive_root_folder }}"
+              placeholder="e.g. Receipts"
+              required
+            />
+            <button class="btn btn-primary" type="submit">Save</button>
+          </div>
+        </form>
+        <div id="driveFolderMsg" class="mt-2 small"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Allowed Senders -->
+<div class="row g-4 mt-2">
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <span>✉️</span>
+        <strong>Allowed Senders</strong>
+        <span class="badge bg-secondary ms-auto">{{ allowed_senders|length }} configured</span>
+      </div>
+      <div class="card-body" id="sendersCardBody"> Emails from other senders will be
+          <strong>archived</strong> (moved out of inbox) automatically.
+          Leave this list empty to accept receipts from <em>any</em> sender.
+        </p>
+
+        <!-- Add sender form -->
+        <form id="addSenderForm" class="mb-3">
+          <div class="input-group">
+            <input
+              type="email"
+              id="newSenderEmail"
+              class="form-control"
+              placeholder="receipts@store.com"
+              required
+            />
+            <button class="btn btn-success" type="submit">Add</button>
+          </div>
+        </form>
+        <div id="addSenderMsg" class="mb-2 small"></div>
+
+        <!-- Existing senders list -->
+        {% if allowed_senders %}
+        <ul class="list-group" id="sendersList">
+          {% for sender in allowed_senders %}
+          <li class="list-group-item d-flex justify-content-between align-items-center" id="sender-{{ sender.id }}">
+            <span>{{ sender.email }}</span>
+            <button
+              class="btn btn-outline-danger btn-sm"
+              onclick="deleteSender({{ sender.id }})"
+            >Remove</button>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted small" id="noSendersMsg">No allowed senders configured — all senders are accepted.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Drive folder form
+document.getElementById('driveFolderForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const folder = document.getElementById('driveFolderInput').value.trim();
+  const msg = document.getElementById('driveFolderMsg');
+  try {
+    const resp = await fetch('/settings/app', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({drive_root_folder: folder}),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      document.getElementById('driveFolderInput').value = data.drive_root_folder;
+      msg.className = 'mt-2 small text-success';
+      msg.textContent = '✓ Saved successfully.';
+    } else {
+      const err = await resp.json();
+      msg.className = 'mt-2 small text-danger';
+      msg.textContent = '✗ ' + (err.detail || 'Save failed.');
+    }
+  } catch (ex) {
+    msg.className = 'mt-2 small text-danger';
+    msg.textContent = '✗ Request failed: ' + ex;
+  }
+});
+
+// Add allowed sender
+document.getElementById('addSenderForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const email = document.getElementById('newSenderEmail').value.trim();
+  const msg = document.getElementById('addSenderMsg');
+  try {
+    const resp = await fetch('/settings/allowed-senders', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email: email}),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      document.getElementById('newSenderEmail').value = '';
+      msg.className = 'mb-2 small text-success';
+      msg.textContent = '✓ Added ' + data.email;
+      addSenderToList(data.id, data.email);
+    } else {
+      const err = await resp.json();
+      msg.className = 'mb-2 small text-danger';
+      msg.textContent = '✗ ' + (err.detail || 'Add failed.');
+    }
+  } catch (ex) {
+    msg.className = 'mb-2 small text-danger';
+    msg.textContent = '✗ Request failed: ' + ex;
+  }
+});
+
+function addSenderToList(id, email) {
+  const noMsg = document.getElementById('noSendersMsg');
+  if (noMsg) noMsg.remove();
+
+  let list = document.getElementById('sendersList');
+  if (!list) {
+    list = document.createElement('ul');
+    list.className = 'list-group';
+    list.id = 'sendersList';
+    // Insert after addSenderMsg to maintain template layout order
+    const msgEl = document.getElementById('addSenderMsg');
+    msgEl.insertAdjacentElement('afterend', list);
+  }
+  const li = document.createElement('li');
+  li.className = 'list-group-item d-flex justify-content-between align-items-center';
+  li.id = 'sender-' + id;
+  li.innerHTML = '<span>' + email + '</span>' +
+    '<button class="btn btn-outline-danger btn-sm" onclick="deleteSender(' + id + ')">Remove</button>';
+  list.appendChild(li);
+}
+
+async function deleteSender(id) {
+  const resp = await fetch('/settings/allowed-senders/' + id, {method: 'DELETE'});
+  if (resp.ok || resp.status === 204) {
+    const el = document.getElementById('sender-' + id);
+    if (el) el.remove();
+    const list = document.getElementById('sendersList');
+    if (list && list.children.length === 0) {
+      list.remove();
+      // Use the stable card-body id to append the 'no senders' message
+      const cardBody = document.getElementById('sendersCardBody');
+      const p = document.createElement('p');
+      p.className = 'text-muted small';
+      p.id = 'noSendersMsg';
+      p.textContent = 'No allowed senders configured — all senders are accepted.';
+      cardBody.appendChild(p);
+    }
+  }
+}
+</script>
 {% endblock %}

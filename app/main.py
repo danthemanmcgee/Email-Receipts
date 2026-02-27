@@ -5,10 +5,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.routers import gmail, receipts, cards, jobs, health, auth, integrations
+from app.routers import settings_router
 from app.database import engine
 from app.models import receipt as receipt_models  # noqa: F401 - ensures models are registered
 from app.models import card as card_models  # noqa: F401
 from app.models import integration as integration_models  # noqa: F401
+from app.models import setting as setting_models  # noqa: F401
 
 app = FastAPI(title="Email Receipts", version="1.0.0")
 
@@ -20,6 +22,7 @@ app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
+app.include_router(settings_router.router, prefix="/settings", tags=["settings"])
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/ui/static"), name="static")
@@ -101,6 +104,8 @@ async def ui_review(request: Request):
 async def ui_settings(request: Request):
     from app.database import SessionLocal
     from app.models.integration import GoogleConnection, ConnectionType
+    from app.models.setting import AllowedSender
+    from app.services.settings_service import get_drive_root_folder
 
     with SessionLocal() as db:
         gmail_conn = (
@@ -119,6 +124,8 @@ async def ui_settings(request: Request):
             )
             .first()
         )
+        allowed_senders = db.query(AllowedSender).order_by(AllowedSender.email).all()
+        drive_root_folder = get_drive_root_folder(db)
 
     accounts_differ = (
         gmail_conn is not None
@@ -133,5 +140,7 @@ async def ui_settings(request: Request):
             "gmail_conn": gmail_conn,
             "drive_conn": drive_conn,
             "accounts_differ": accounts_differ,
+            "allowed_senders": allowed_senders,
+            "drive_root_folder": drive_root_folder,
         },
     )

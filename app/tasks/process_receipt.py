@@ -55,6 +55,7 @@ def process_receipt_task(self, gmail_message_id: str):
         extract_attachments_from_message,
         extract_body_text,
         apply_label,
+        archive_message,
         LABEL_MAP,
     )
     from app.services.attachment_service import select_best_pdf
@@ -107,6 +108,21 @@ def process_receipt_task(self, gmail_message_id: str):
                     receipt.received_at = parsedate_to_datetime(date_str)
                 except Exception:
                     pass
+
+            # Sender allowlist check: if the list is non-empty and the sender
+            # is not on it, archive the message and skip processing.
+            from app.services.settings_service import is_sender_allowed
+            if not is_sender_allowed(db, receipt.sender or ""):
+                logger.info(
+                    "Message %s from '%s' is not in the allowed-senders list; archiving.",
+                    gmail_message_id,
+                    receipt.sender,
+                )
+                if gmail:
+                    archive_message(gmail, gmail_message_id)
+                db.delete(receipt)
+                db.commit()
+                return {"status": "archived", "reason": "sender_not_allowed"}
 
             # Handle attachments
             raw_attachments = extract_attachments_from_message(message)
@@ -179,6 +195,7 @@ def process_receipt_task(self, gmail_message_id: str):
                 return {"status": receipt.status.value, "receipt_id": receipt.id, "reason": "drive_not_connected"}
 
             if receipt.content_hash and selected:
+                from app.services.settings_service import get_drive_root_folder
                 folder_path, filename = build_drive_path(
                     card=card,
                     purchase_date=receipt.purchase_date,
@@ -186,7 +203,7 @@ def process_receipt_task(self, gmail_message_id: str):
                     amount=receipt.amount,
                     currency=receipt.currency,
                     gmail_message_id=gmail_message_id,
-                    root_folder=settings.DRIVE_ROOT_FOLDER,
+                    root_folder=get_drive_root_folder(db),
                 )
                 if pdf_bytes_cache:
                     file_id = upload_pdf_to_drive(drive, pdf_bytes_cache, folder_path, filename)
