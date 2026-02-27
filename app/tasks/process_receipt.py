@@ -13,22 +13,20 @@ settings = get_settings()
 def sync_gmail(self):
     """Poll Gmail for new receipts and queue individual processing tasks."""
     try:
-        from app.services.gmail_service import build_gmail_service, list_new_messages
+        from app.services.gmail_service import build_gmail_service_from_db, list_new_messages
         from app.database import SessionLocal
         from app.models.receipt import Receipt
 
-        gmail = build_gmail_service(
-            settings.GMAIL_CREDENTIALS_FILE, settings.GMAIL_TOKEN_FILE
-        )
-        if not gmail:
-            logger.warning("Gmail service unavailable, skipping sync")
-            return {"status": "skipped", "reason": "no_credentials"}
-
-        messages = list_new_messages(gmail)
-        logger.info("Found %d new messages", len(messages))
-
-        queued = 0
         with SessionLocal() as db:
+            gmail = build_gmail_service_from_db(db)
+            if not gmail:
+                logger.warning("Gmail service unavailable, skipping sync")
+                return {"status": "skipped", "reason": "no_credentials"}
+
+            messages = list_new_messages(gmail)
+            logger.info("Found %d new messages", len(messages))
+
+            queued = 0
             for msg in messages:
                 mid = msg["id"]
                 exists = db.query(Receipt).filter(Receipt.gmail_message_id == mid).first()

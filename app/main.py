@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.routers import gmail, receipts, cards, jobs, health, auth, integrations
 from app.routers import settings_router
 from app.database import engine
@@ -145,5 +146,7 @@ async def ui_settings(request: Request):
             "allowed_senders": allowed_senders,
             "drive_root_folder": drive_root_folder,
             "drive_root_folder_id": drive_root_folder_id,
+            "google_api_key": get_settings().GOOGLE_API_KEY,
+            "google_client_id": get_settings().GOOGLE_OAUTH_CLIENT_ID,
         },
     )

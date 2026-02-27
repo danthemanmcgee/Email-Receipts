@@ -142,6 +142,38 @@ class DriveFoldersResponse(BaseModel):
     parent_id: str
 
 
+class DriveTokenResponse(BaseModel):
+    access_token: str
+
+
+@router.get("/drive-token", response_model=DriveTokenResponse)
+def get_drive_access_token(db: Session = Depends(get_db)):
+    """Return a valid Drive access token for use with the Google Drive Picker.
+
+    The token is refreshed if expired before being returned.
+    """
+    from app.models.integration import GoogleConnection, ConnectionType
+    from app.services.gmail_service import _credentials_from_connection, _refresh_and_persist
+
+    conn = (
+        db.query(GoogleConnection)
+        .filter(
+            GoogleConnection.connection_type == ConnectionType.drive,
+            GoogleConnection.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if conn is None or not conn.access_token:
+        raise HTTPException(status_code=503, detail="Google Drive is not connected")
+
+    creds = _credentials_from_connection(conn)
+    if creds:
+        _refresh_and_persist(creds, conn, db)
+
+    return DriveTokenResponse(access_token=conn.access_token)
+
+
 @router.get("/drive-folders", response_model=DriveFoldersResponse)
 def list_drive_folders(
     parent_id: str = Query(default="root"),
