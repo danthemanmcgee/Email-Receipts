@@ -231,3 +231,98 @@ class TestListDriveFoldersEndpoint:
         assert result.parent_id == "custom-parent-id"
         query_kwarg = svc.files.return_value.list.call_args[1]["q"]
         assert "'custom-parent-id' in parents" in query_kwarg
+
+
+# ---------------------------------------------------------------------------
+# settings_router – get_drive_access_token endpoint
+# ---------------------------------------------------------------------------
+
+class TestGetDriveAccessTokenEndpoint:
+    def test_returns_access_token_when_connected(self):
+        """get_drive_access_token returns the token for a connected Drive account."""
+        from app.routers.settings_router import get_drive_access_token
+        from app.models.integration import GoogleConnection, ConnectionType
+        from datetime import datetime
+
+        conn = GoogleConnection.__new__(GoogleConnection)
+        conn.connection_type = ConnectionType.drive
+        conn.access_token = "test-access-token"
+        conn.refresh_token = "test-refresh-token"
+        conn.token_expiry = datetime(2099, 1, 1)
+        conn.scopes = "https://www.googleapis.com/auth/drive.file"
+        conn.is_active = True
+
+        db = MagicMock()
+        mock_q = MagicMock()
+        mock_q.filter.return_value.first.return_value = conn
+        db.query.return_value = mock_q
+
+        with patch("app.services.gmail_service._credentials_from_connection", return_value=None):
+            result = get_drive_access_token(db=db)
+
+        assert result.access_token == "test-access-token"
+
+    def test_raises_503_when_not_connected(self):
+        """get_drive_access_token raises 503 when Drive is not connected."""
+        from app.routers.settings_router import get_drive_access_token
+        from fastapi import HTTPException
+
+        db = MagicMock()
+        mock_q = MagicMock()
+        mock_q.filter.return_value.first.return_value = None
+        db.query.return_value = mock_q
+
+        with pytest.raises(HTTPException) as exc_info:
+            get_drive_access_token(db=db)
+
+        assert exc_info.value.status_code == 503
+
+    def test_raises_503_when_token_missing(self):
+        """get_drive_access_token raises 503 when connection exists but has no access_token."""
+        from app.routers.settings_router import get_drive_access_token
+        from app.models.integration import GoogleConnection, ConnectionType
+        from fastapi import HTTPException
+
+        conn = GoogleConnection.__new__(GoogleConnection)
+        conn.connection_type = ConnectionType.drive
+        conn.access_token = None
+        conn.refresh_token = "test-refresh-token"
+        conn.is_active = True
+
+        db = MagicMock()
+        mock_q = MagicMock()
+        mock_q.filter.return_value.first.return_value = conn
+        db.query.return_value = mock_q
+
+        with pytest.raises(HTTPException) as exc_info:
+            get_drive_access_token(db=db)
+
+        assert exc_info.value.status_code == 503
+
+    def test_refreshes_token_before_returning(self):
+        """get_drive_access_token calls _refresh_and_persist when credentials are valid."""
+        from app.routers.settings_router import get_drive_access_token
+        from app.models.integration import GoogleConnection, ConnectionType
+        from datetime import datetime
+
+        conn = GoogleConnection.__new__(GoogleConnection)
+        conn.connection_type = ConnectionType.drive
+        conn.access_token = "old-token"
+        conn.refresh_token = "refresh-token"
+        conn.token_expiry = datetime(2099, 1, 1)
+        conn.scopes = "https://www.googleapis.com/auth/drive.file"
+        conn.is_active = True
+
+        db = MagicMock()
+        mock_q = MagicMock()
+        mock_q.filter.return_value.first.return_value = conn
+        db.query.return_value = mock_q
+
+        mock_creds = MagicMock()
+
+        with patch("app.services.gmail_service._credentials_from_connection", return_value=mock_creds):
+            with patch("app.services.gmail_service._refresh_and_persist") as mock_refresh:
+                result = get_drive_access_token(db=db)
+
+        mock_refresh.assert_called_once_with(mock_creds, conn, db)
+        assert result.access_token == "old-token"

@@ -1,10 +1,9 @@
 import logging
-import os
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Legacy combined scopes (kept for file-based fallback only)
+# Legacy combined scopes (file-based credential helpers use these)
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/drive.file",
@@ -20,6 +19,7 @@ GMAIL_ONLY_SCOPES = [
 
 DRIVE_ONLY_SCOPES = [
     "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive.readonly",
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
 ]
@@ -286,8 +286,7 @@ def _refresh_and_persist(creds, conn, db) -> None:
 def build_gmail_service_from_db(db):
     """Build Gmail API service using the stored gmail connection tokens.
 
-    Falls back to file-based credentials if no DB connection exists (backward compat).
-    Returns None if no credentials are available.
+    Returns None if no active Gmail connection exists in the database.
     """
     from app.models.integration import GoogleConnection, ConnectionType
 
@@ -312,21 +311,13 @@ def build_gmail_service_from_db(db):
                 logger.error("Failed to build Gmail service from DB credentials: %s", exc)
                 return None
 
-    # Backward-compat fallback: try file-based token
-    from app.config import get_settings
-    settings = get_settings()
-    if os.path.exists(settings.GMAIL_TOKEN_FILE):
-        logger.info("No DB gmail connection; falling back to file-based token")
-        return build_gmail_service(settings.GMAIL_CREDENTIALS_FILE, settings.GMAIL_TOKEN_FILE)
-
     return None
 
 
 def build_drive_service_from_db(db):
     """Build Drive API service using the stored drive connection tokens.
 
-    Falls back to file-based credentials if no DB connection exists (backward compat).
-    Returns None if no credentials are available.
+    Returns None if no active Drive connection exists in the database.
     """
     from app.models.integration import GoogleConnection, ConnectionType
 
@@ -350,13 +341,6 @@ def build_drive_service_from_db(db):
             except Exception as exc:
                 logger.error("Failed to build Drive service from DB credentials: %s", exc)
                 return None
-
-    # Backward-compat fallback: try file-based token
-    from app.config import get_settings
-    settings = get_settings()
-    if os.path.exists(settings.GMAIL_TOKEN_FILE):
-        logger.info("No DB drive connection; falling back to file-based token")
-        return build_drive_service(settings.GMAIL_CREDENTIALS_FILE, settings.GMAIL_TOKEN_FILE)
 
     return None
 

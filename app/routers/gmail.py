@@ -12,12 +12,7 @@ def trigger_gmail_sync(db: Session = Depends(get_db)):
     Returns 503 with an actionable error if no Gmail connection is configured.
     """
     from app.models.integration import GoogleConnection, ConnectionType
-    import os
-    from app.config import get_settings
 
-    settings = get_settings()
-
-    # Check DB connection first; also accept file-based fallback (backward compat)
     gmail_conn = (
         db.query(GoogleConnection)
         .filter(
@@ -26,9 +21,8 @@ def trigger_gmail_sync(db: Session = Depends(get_db)):
         )
         .first()
     )
-    has_file_token = os.path.exists(settings.GMAIL_TOKEN_FILE)
 
-    if not gmail_conn and not has_file_token:
+    if not gmail_conn:
         raise HTTPException(
             status_code=503,
             detail={
