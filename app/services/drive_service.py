@@ -51,10 +51,19 @@ def sanitize_path_component(s: str) -> str:
     return s[:100]
 
 
-def ensure_drive_folder(service, folder_path: str) -> str:
-    """Create nested Drive folders as needed and return the leaf folder ID."""
+def ensure_drive_folder(service, folder_path: str, root_folder_id: Optional[str] = None) -> str:
+    """Create nested Drive folders as needed and return the leaf folder ID.
+
+    If ``root_folder_id`` is provided the first path segment (the root folder
+    name) is skipped and traversal begins from that folder ID directly.
+    """
     parts = [p for p in folder_path.split("/") if p]
-    parent_id = "root"
+    if root_folder_id:
+        # The first segment is the root folder name; we already have its ID.
+        parts = parts[1:]
+        parent_id = root_folder_id
+    else:
+        parent_id = "root"
 
     for part in parts:
         safe_part = part.replace("'", "\\'")
@@ -84,18 +93,22 @@ def upload_pdf_to_drive(
     pdf_bytes: bytes,
     folder_path: str,
     filename: str,
+    root_folder_id: Optional[str] = None,
 ) -> Optional[str]:
     """Upload PDF bytes to a Drive folder path. Returns Drive file_id, or None on failure.
 
     Idempotent within the target folder: if a file with the same name already exists
     in the resolved leaf folder, its existing ID is returned without re-uploading.
+
+    If ``root_folder_id`` is provided, traversal starts from that folder ID
+    (skipping the first path segment which is the root folder name).
     """
     import io
 
     try:
         from googleapiclient.http import MediaIoBaseUpload
 
-        parent_id = ensure_drive_folder(service, folder_path)
+        parent_id = ensure_drive_folder(service, folder_path, root_folder_id)
 
         safe_name = filename.replace("'", "\\'")
         query = f"name='{safe_name}' and '{parent_id}' in parents and trashed=false"

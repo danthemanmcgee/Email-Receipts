@@ -195,7 +195,7 @@ def process_receipt_task(self, gmail_message_id: str):
                 return {"status": receipt.status.value, "receipt_id": receipt.id, "reason": "drive_not_connected"}
 
             if receipt.content_hash and selected:
-                from app.services.settings_service import get_drive_root_folder
+                from app.services.settings_service import get_drive_root_folder, get_drive_root_folder_id
                 folder_path, filename = build_drive_path(
                     card=card,
                     purchase_date=receipt.purchase_date,
@@ -206,7 +206,8 @@ def process_receipt_task(self, gmail_message_id: str):
                     root_folder=get_drive_root_folder(db),
                 )
                 if pdf_bytes_cache:
-                    file_id = upload_pdf_to_drive(drive, pdf_bytes_cache, folder_path, filename)
+                    root_folder_id = get_drive_root_folder_id(db) or None
+                    file_id = upload_pdf_to_drive(drive, pdf_bytes_cache, folder_path, filename, root_folder_id=root_folder_id)
                     if file_id:
                         receipt.drive_file_id = file_id
                         receipt.drive_path = f"{folder_path}/{filename}"
