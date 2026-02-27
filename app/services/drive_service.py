@@ -51,6 +51,26 @@ def sanitize_path_component(s: str) -> str:
     return s[:100]
 
 
+def validate_drive_folder_id(service, folder_id: str) -> tuple[bool, str]:
+    """Check that a Drive folder ID is accessible.
+
+    Returns ``(True, "ok")`` when the folder exists and is reachable by the
+    authenticated account.  Returns ``(False, reason)`` otherwise – the reason
+    string contains enough context to diagnose the problem (wrong account,
+    folder deleted, bad ID, etc.).
+    """
+    try:
+        meta = service.files().get(fileId=folder_id, fields="id,name,mimeType").execute()
+        if meta.get("mimeType") != "application/vnd.google-apps.folder":
+            return False, (
+                f"ID {folder_id!r} exists but is not a folder "
+                f"(mimeType={meta.get('mimeType')!r})"
+            )
+        return True, "ok"
+    except Exception as exc:
+        return False, str(exc)
+
+
 def ensure_drive_folder(service, folder_path: str, root_folder_id: Optional[str] = None) -> str:
     """Create nested Drive folders as needed and return the leaf folder ID.
 
@@ -107,6 +127,17 @@ def upload_pdf_to_drive(
 
     try:
         from googleapiclient.http import MediaIoBaseUpload
+
+        if root_folder_id:
+            valid, reason = validate_drive_folder_id(service, root_folder_id)
+            if not valid:
+                logger.error(
+                    "Drive root folder %r is not accessible "
+                    "(check folder ID, account ownership, and sharing): %s",
+                    root_folder_id,
+                    reason,
+                )
+                return None
 
         parent_id = ensure_drive_folder(service, folder_path, root_folder_id)
 

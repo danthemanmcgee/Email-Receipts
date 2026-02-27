@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.routers import gmail, receipts, cards, jobs, health, auth, integrations
@@ -50,7 +50,13 @@ async def ui_receipts(request: Request, status: str = "", skip: int = 0, limit: 
             except ValueError:
                 pass
         total = q.count()
-        items = q.order_by(Receipt.created_at.desc()).offset(skip).limit(limit).all()
+        items = (
+            q.options(selectinload(Receipt.physical_card))
+            .order_by(Receipt.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
     return templates.TemplateResponse(
         "index.html",
@@ -70,7 +76,15 @@ async def ui_receipt_detail(request: Request, receipt_id: int):
     from app.models.receipt import Receipt
 
     with SessionLocal() as db:
-        receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+        receipt = (
+            db.query(Receipt)
+            .options(
+                selectinload(Receipt.physical_card),
+                selectinload(Receipt.attachment_logs),
+            )
+            .filter(Receipt.id == receipt_id)
+            .first()
+        )
         if not receipt:
             return HTMLResponse("Receipt not found", status_code=404)
         cards_list = []
@@ -91,6 +105,7 @@ async def ui_review(request: Request):
     with SessionLocal() as db:
         items = (
             db.query(Receipt)
+            .options(selectinload(Receipt.physical_card))
             .filter(Receipt.status == ReceiptStatus.needs_review)
             .order_by(Receipt.created_at.desc())
             .all()

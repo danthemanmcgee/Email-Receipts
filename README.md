@@ -193,6 +193,31 @@ The Drive OAuth connection has not been set up or has expired.
 1. Visit http://localhost:8000/ui/settings and click **Connect Drive** (or **Reconnect Drive**)
 2. After reconnecting, use `POST /receipts/{id}/reprocess` to reprocess the affected receipts
 
+### Drive upload fails — "Drive root folder not accessible"
+
+The configured Drive root folder ID is invalid or inaccessible. Common causes:
+
+- **Wrong folder ID** — the ID belongs to a different account or has been deleted.
+  Find a valid folder ID from your Drive URL: `https://drive.google.com/drive/folders/<FOLDER_ID>`
+- **Account mismatch** — the Drive connection is authenticated as account B but the folder was shared with account A. Make sure the folder is **owned by or explicitly shared with** the Drive-connected account.
+- **Missing sharing** — if you share a folder with the Drive account, the account must accept the share.
+
+The worker logs a detailed message when this happens, for example:
+```
+ERROR Drive root folder 'xyz...' is not accessible (check folder ID, account ownership, and sharing): <HttpError 404 ...>
+```
+
+**How to obtain a valid Drive folder ID:**
+
+1. Open [Google Drive](https://drive.google.com/) as the Drive-connected account.
+2. Navigate to or create the folder where receipts should be stored.
+3. The folder ID appears in the browser URL after `/folders/`: `https://drive.google.com/drive/folders/<FOLDER_ID>`
+4. Paste that ID into the **Drive root folder** field on the Settings page.
+
+### Gmail label conflicts (409)
+
+Label creation is idempotent — if a `409 Conflict` is returned by the Gmail API (e.g., the label already exists from a previous run), the worker re-fetches the existing label and continues without error.
+
 ### Both accounts show "Not connected" after restart
 
 OAuth tokens are stored in the database and persist across restarts automatically.

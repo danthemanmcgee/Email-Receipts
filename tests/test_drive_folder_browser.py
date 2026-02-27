@@ -131,16 +131,17 @@ class TestUploadPdfRootFolderIdPropagation:
     def test_root_folder_id_passed_to_ensure_drive_folder(self):
         """upload_pdf_to_drive forwards root_folder_id to ensure_drive_folder."""
         with patch("app.services.drive_service.ensure_drive_folder", return_value="leaf-id") as mock_ensure:
-            svc = MagicMock()
-            svc.files.return_value.list.return_value.execute.return_value = {"files": []}
-            svc.files.return_value.create.return_value.execute.return_value = {"id": "file-id"}
+            with patch("app.services.drive_service.validate_drive_folder_id", return_value=(True, "ok")):
+                svc = MagicMock()
+                svc.files.return_value.list.return_value.execute.return_value = {"files": []}
+                svc.files.return_value.create.return_value.execute.return_value = {"id": "file-id"}
 
-            from googleapiclient.http import MediaIoBaseUpload  # ensure importable
-            with patch("googleapiclient.http.MediaIoBaseUpload"):
-                upload_pdf_to_drive(
-                    svc, b"%PDF-1", "Receipts/Chase/2024/2024-01", "receipt.pdf",
-                    root_folder_id="receipts-folder-id",
-                )
+                from googleapiclient.http import MediaIoBaseUpload  # ensure importable
+                with patch("googleapiclient.http.MediaIoBaseUpload"):
+                    upload_pdf_to_drive(
+                        svc, b"%PDF-1", "Receipts/Chase/2024/2024-01", "receipt.pdf",
+                        root_folder_id="receipts-folder-id",
+                    )
 
             mock_ensure.assert_called_once_with(svc, "Receipts/Chase/2024/2024-01", "receipts-folder-id")
 
