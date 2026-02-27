@@ -43,6 +43,19 @@ def get_receipt(receipt_id: int, db: Session = Depends(get_db)):
     return receipt
 
 
+@router.patch("/{receipt_id}", response_model=ReceiptResponse)
+def update_receipt(receipt_id: int, payload: ReceiptUpdate, db: Session = Depends(get_db)):
+    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(receipt, key, value)
+    db.commit()
+    db.refresh(receipt)
+    return receipt
+
+
 @router.post("/{receipt_id}/reprocess")
 def reprocess_receipt(receipt_id: int, db: Session = Depends(get_db)):
     receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
@@ -52,8 +65,19 @@ def reprocess_receipt(receipt_id: int, db: Session = Depends(get_db)):
     db.commit()
     try:
         from app.tasks.process_receipt import process_receipt_task
+        from app.models.job import JobRun, JobType, JobStatus
+        job_run = JobRun(
+            job_type=JobType.reprocess_receipt,
+            status=JobStatus.running,
+            details=f"receipt_id={receipt_id}",
+        )
+        db.add(job_run)
+        db.commit()
+        db.refresh(job_run)
         task = process_receipt_task.delay(receipt.gmail_message_id)
-        return {"status": "queued", "task_id": task.id}
+        job_run.task_id = task.id
+        db.commit()
+        return {"status": "queued", "task_id": task.id, "job_run_id": job_run.id}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

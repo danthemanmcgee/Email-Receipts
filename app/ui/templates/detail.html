@@ -23,6 +23,8 @@
                     <dd class="col-sm-8">{{ receipt.sender or '—' }}</dd>
                     <dt class="col-sm-4">Received</dt>
                     <dd class="col-sm-8">{{ receipt.received_at or '—' }}</dd>
+                    <dt class="col-sm-4">Processed At</dt>
+                    <dd class="col-sm-8">{% if receipt.processed_at %}{{ receipt.processed_at.strftime('%Y-%m-%d %H:%M UTC') }}{% else %}<span class="text-muted">Not yet processed</span>{% endif %}</dd>
                     <dt class="col-sm-4">Message ID</dt>
                     <dd class="col-sm-8"><code>{{ receipt.gmail_message_id }}</code></dd>
                 </dl>
@@ -31,42 +33,97 @@
     </div>
     <div class="col-md-6">
         <div class="card mb-3">
-            <div class="card-header">Extracted Data</div>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Extracted Data</span>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#editForm" id="editToggleBtn">✏️ Edit</button>
+            </div>
             <div class="card-body">
-                <dl class="row mb-0">
-                    <dt class="col-sm-4">Merchant</dt>
-                    <dd class="col-sm-8">{{ receipt.merchant or '—' }}</dd>
-                    <dt class="col-sm-4">Date</dt>
-                    <dd class="col-sm-8">{{ receipt.purchase_date or '—' }}</dd>
-                    <dt class="col-sm-4">Amount</dt>
-                    <dd class="col-sm-8">{% if receipt.amount is not none %}{{ "%.2f"|format(receipt.amount) }} {{ receipt.currency }}{% else %}—{% endif %}</dd>
-                    <dt class="col-sm-4">Card Last4</dt>
-                    <dd class="col-sm-8">{{ receipt.card_last4_seen or '—' }}</dd>
-                    <dt class="col-sm-4">Network</dt>
-                    <dd class="col-sm-8">{{ receipt.card_network_or_issuer or '—' }}</dd>
-                    <dt class="col-sm-4">Source</dt>
-                    <dd class="col-sm-8">{{ receipt.source_type or '—' }}</dd>
-                    <dt class="col-sm-4">Confidence</dt>
-                    <dd class="col-sm-8">{% if receipt.confidence is not none %}{{ "%.0f"|format(receipt.confidence * 100) }}%{% else %}—{% endif %}</dd>
-                    <dt class="col-sm-4">Notes</dt>
-                    <dd class="col-sm-8"><small>{{ receipt.extraction_notes or '—' }}</small></dd>
-                </dl>
+                <!-- View mode -->
+                <div id="extractionView">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">Merchant</dt>
+                        <dd class="col-sm-8">{{ receipt.merchant or '—' }}</dd>
+                        <dt class="col-sm-4">Date</dt>
+                        <dd class="col-sm-8">{{ receipt.purchase_date or '—' }}</dd>
+                        <dt class="col-sm-4">Amount</dt>
+                        <dd class="col-sm-8">{% if receipt.amount is not none %}{{ "%.2f"|format(receipt.amount) }} {{ receipt.currency }}{% else %}—{% endif %}</dd>
+                        <dt class="col-sm-4">Card Last4</dt>
+                        <dd class="col-sm-8">{{ receipt.card_last4_seen or '—' }}</dd>
+                        <dt class="col-sm-4">Network</dt>
+                        <dd class="col-sm-8"><small class="text-muted">{{ receipt.card_network_or_issuer or '—' }}</small></dd>
+                        <dt class="col-sm-4">Card</dt>
+                        <dd class="col-sm-8">{% if receipt.physical_card %}<strong>{{ receipt.physical_card.display_name }}</strong>{% if receipt.physical_card.network %} <small class="text-muted">({{ receipt.physical_card.network }})</small>{% endif %}{% else %}—{% endif %}</dd>
+                        <dt class="col-sm-4">Source</dt>
+                        <dd class="col-sm-8">{{ receipt.source_type or '—' }}</dd>
+                        <dt class="col-sm-4">Confidence</dt>
+                        <dd class="col-sm-8">{% if receipt.confidence is not none %}{{ "%.0f"|format(receipt.confidence * 100) }}%{% else %}—{% endif %}</dd>
+                        <dt class="col-sm-4">Notes</dt>
+                        <dd class="col-sm-8"><small>{{ receipt.extraction_notes or '—' }}</small></dd>
+                    </dl>
+                </div>
+                <!-- Edit mode (collapsible) -->
+                <div class="collapse mt-3" id="editForm">
+                    <form onsubmit="saveExtraction(event, {{ receipt.id }})">
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Merchant</label>
+                            <input type="text" name="merchant" class="form-control form-control-sm" value="{{ receipt.merchant or '' }}">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Purchase Date</label>
+                            <input type="date" name="purchase_date" class="form-control form-control-sm" value="{{ receipt.purchase_date or '' }}">
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col">
+                                <label class="form-label small fw-bold">Amount</label>
+                                <input type="number" step="0.01" name="amount" class="form-control form-control-sm" value="{{ receipt.amount or '' }}">
+                            </div>
+                            <div class="col">
+                                <label class="form-label small fw-bold">Currency</label>
+                                <input type="text" name="currency" class="form-control form-control-sm" value="{{ receipt.currency or 'USD' }}" maxlength="10">
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Card Last4</label>
+                            <input type="text" name="card_last4_seen" class="form-control form-control-sm" value="{{ receipt.card_last4_seen or '' }}" maxlength="10">
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bootstrap.Collapse.getInstance(document.getElementById('editForm')).hide()">Cancel</button>
+                        </div>
+                    </form>
+                    <div id="edit-result" class="mt-2 small"></div>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-{% if receipt.drive_path %}
+{% if receipt.drive_file_id %}
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>📄 Receipt PDF</span>
+        <a href="https://drive.google.com/file/d/{{ receipt.drive_file_id }}/view" target="_blank" class="btn btn-sm btn-outline-secondary">Open in Drive ↗</a>
+    </div>
+    <div class="card-body p-0">
+        <iframe
+            src="https://drive.google.com/file/d/{{ receipt.drive_file_id }}/preview"
+            width="100%"
+            height="500"
+            allow="autoplay"
+            style="border:0"
+            title="Receipt PDF Preview">
+        </iframe>
+    </div>
+</div>
+{% endif %}
+
+{% if receipt.drive_path and not receipt.drive_file_id %}
 <div class="card mb-3">
     <div class="card-header">Drive Storage</div>
     <div class="card-body">
         <dl class="row mb-0">
             <dt class="col-sm-2">Path</dt>
             <dd class="col-sm-10"><code>{{ receipt.drive_path }}</code></dd>
-            {% if receipt.drive_file_id %}
-            <dt class="col-sm-2">File ID</dt>
-            <dd class="col-sm-10"><a href="https://drive.google.com/file/d/{{ receipt.drive_file_id }}" target="_blank">{{ receipt.drive_file_id }}</a></dd>
-            {% endif %}
         </dl>
     </div>
 </div>
@@ -106,7 +163,7 @@
                     <select name="card_id" class="form-select">
                         <option value="">— Select card —</option>
                         {% for card in cards %}
-                        <option value="{{ card.id }}">{{ card.display_name }} {% if card.last4 %}(****{{ card.last4 }}){% endif %}</option>
+                        <option value="{{ card.id }}"><strong>{{ card.display_name }}</strong>{% if card.last4 %} (****{{ card.last4 }}){% endif %}{% if card.network %} — <small>{{ card.network }}</small>{% endif %}</option>
                         {% endfor %}
                     </select>
                 </div>

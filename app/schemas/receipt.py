@@ -47,6 +47,7 @@ class ReceiptResponse(ReceiptBase):
     drive_file_id: Optional[str] = None
     drive_path: Optional[str] = None
     content_hash: Optional[str] = None
+    processed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     attachment_logs: List[AttachmentLogSchema] = []
