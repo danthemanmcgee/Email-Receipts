@@ -126,6 +126,8 @@ async def ui_settings(request: Request):
         )
         allowed_senders = db.query(AllowedSender).order_by(AllowedSender.email).all()
         drive_root_folder = get_drive_root_folder(db)
+        from app.services.settings_service import get_drive_root_folder_id
+        drive_root_folder_id = get_drive_root_folder_id(db)
 
     accounts_differ = (
         gmail_conn is not None
@@ -142,5 +144,6 @@ async def ui_settings(request: Request):
             "accounts_differ": accounts_differ,
             "allowed_senders": allowed_senders,
             "drive_root_folder": drive_root_folder,
+            "drive_root_folder_id": drive_root_folder_id,
         },
     )

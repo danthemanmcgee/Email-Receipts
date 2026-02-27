@@ -107,6 +107,7 @@
           per card, year, and month.
         </p>
         <form id="driveFolderForm">
+          <input type="hidden" id="driveFolderIdInput" value="{{ drive_root_folder_id }}" />
           <div class="input-group">
             <input
               type="text"
@@ -116,10 +117,51 @@
               placeholder="e.g. Receipts"
               required
             />
+            {% if drive_conn %}
+            <button class="btn btn-outline-secondary" type="button" id="browseFolderBtn" title="Browse Drive folders">
+              📂 Browse
+            </button>
+            {% endif %}
             <button class="btn btn-primary" type="submit">Save</button>
           </div>
         </form>
         <div id="driveFolderMsg" class="mt-2 small"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Drive Folder Browser Modal -->
+<div class="modal fade" id="driveFolderModal" tabindex="-1" aria-labelledby="driveFolderModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="driveFolderModalLabel">📂 Browse Google Drive Folders</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Breadcrumb navigation -->
+        <nav aria-label="folder breadcrumb" class="mb-3">
+          <ol class="breadcrumb" id="folderBreadcrumb">
+            <li class="breadcrumb-item"><a href="#" data-folder-id="root" data-folder-name="My Drive">My Drive</a></li>
+          </ol>
+        </nav>
+        <!-- Folder list -->
+        <div id="folderListArea">
+          <div class="text-center text-muted py-4" id="folderLoading">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+            Loading folders…
+          </div>
+          <ul class="list-group" id="folderList" style="display:none;"></ul>
+          <p class="text-muted small mt-2" id="folderEmpty" style="display:none;">No subfolders found in this location.</p>
+        </div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <div class="small text-muted" id="selectedFolderLabel">No folder selected</div>
+        <div>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="confirmFolderBtn" disabled>Select This Folder</button>
+        </div>
       </div>
     </div>
   </div>
@@ -180,16 +222,18 @@
 document.getElementById('driveFolderForm').addEventListener('submit', async function(e) {
   e.preventDefault();
   const folder = document.getElementById('driveFolderInput').value.trim();
+  const folderId = document.getElementById('driveFolderIdInput').value.trim();
   const msg = document.getElementById('driveFolderMsg');
   try {
     const resp = await fetch('/settings/app', {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({drive_root_folder: folder}),
+      body: JSON.stringify({drive_root_folder: folder, drive_root_folder_id: folderId}),
     });
     if (resp.ok) {
       const data = await resp.json();
       document.getElementById('driveFolderInput').value = data.drive_root_folder;
+      document.getElementById('driveFolderIdInput').value = data.drive_root_folder_id;
       msg.className = 'mt-2 small text-success';
       msg.textContent = '✓ Saved successfully.';
     } else {
@@ -201,6 +245,142 @@ document.getElementById('driveFolderForm').addEventListener('submit', async func
     msg.className = 'mt-2 small text-danger';
     msg.textContent = '✗ Request failed: ' + ex;
   }
+});
+
+// ── Drive Folder Browser ──────────────────────────────────────────────────────
+
+// Stack of {id, name} representing the current navigation path
+let driveFolderStack = [];
+let driveFolderSelected = null; // {id, name}
+
+function renderDriveFolderBreadcrumb() {
+  const ol = document.getElementById('folderBreadcrumb');
+  ol.innerHTML = '';
+  // Root item
+  const rootLi = document.createElement('li');
+  rootLi.className = 'breadcrumb-item';
+  if (driveFolderStack.length === 0) {
+    rootLi.classList.add('active');
+    rootLi.textContent = 'My Drive';
+  } else {
+    const a = document.createElement('a');
+    a.href = '#';
+    a.textContent = 'My Drive';
+    a.addEventListener('click', function(e) { e.preventDefault(); navigateDriveFolder('root', 'My Drive', 0); });
+    rootLi.appendChild(a);
+  }
+  ol.appendChild(rootLi);
+
+  driveFolderStack.forEach(function(item, idx) {
+    const li = document.createElement('li');
+    li.className = 'breadcrumb-item';
+    if (idx === driveFolderStack.length - 1) {
+      li.classList.add('active');
+      li.textContent = item.name;
+    } else {
+      const a = document.createElement('a');
+      a.href = '#';
+      a.textContent = item.name;
+      const capturedIdx = idx + 1;
+      a.addEventListener('click', function(e) {
+        e.preventDefault();
+        navigateDriveFolder(item.id, item.name, capturedIdx);
+      });
+      li.appendChild(a);
+    }
+    ol.appendChild(li);
+  });
+}
+
+async function navigateDriveFolder(parentId, parentName, stackDepth) {
+  // Trim stack to the chosen depth
+  driveFolderStack = driveFolderStack.slice(0, stackDepth);
+  renderDriveFolderBreadcrumb();
+  await loadDriveFolders(parentId);
+}
+
+async function loadDriveFolders(parentId) {
+  const loading = document.getElementById('folderLoading');
+  const list = document.getElementById('folderList');
+  const empty = document.getElementById('folderEmpty');
+  loading.style.display = '';
+  list.style.display = 'none';
+  empty.style.display = 'none';
+  list.innerHTML = '';
+
+  try {
+    const resp = await fetch('/settings/drive-folders?parent_id=' + encodeURIComponent(parentId));
+    if (!resp.ok) {
+      const err = await resp.json();
+      loading.style.display = 'none';
+      empty.style.display = '';
+      empty.textContent = '✗ ' + (err.detail || 'Failed to load folders.');
+      return;
+    }
+    const data = await resp.json();
+    loading.style.display = 'none';
+
+    if (data.folders.length === 0) {
+      empty.style.display = '';
+      empty.textContent = 'No subfolders found in this location.';
+      return;
+    }
+
+    data.folders.forEach(function(folder) {
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex justify-content-between align-items-center';
+
+      const nameBtn = document.createElement('button');
+      nameBtn.className = 'btn btn-link p-0 text-start';
+      nameBtn.innerHTML = '📁 ' + folder.name + ' <small class="text-muted ms-1">›</small>';
+      nameBtn.addEventListener('click', function() {
+        driveFolderStack.push({id: folder.id, name: folder.name});
+        navigateDriveFolder(folder.id, folder.name, driveFolderStack.length);
+      });
+
+      const selectBtn = document.createElement('button');
+      selectBtn.className = 'btn btn-sm btn-outline-primary';
+      selectBtn.textContent = 'Select';
+      selectBtn.addEventListener('click', function() {
+        driveFolderSelected = {id: folder.id, name: folder.name};
+        const label = document.getElementById('selectedFolderLabel');
+        label.innerHTML = '📂 <strong>' + folder.name + '</strong> selected';
+        document.getElementById('confirmFolderBtn').disabled = false;
+      });
+
+      li.appendChild(nameBtn);
+      li.appendChild(selectBtn);
+      list.appendChild(li);
+    });
+    list.style.display = '';
+  } catch (ex) {
+    loading.style.display = 'none';
+    empty.style.display = '';
+    empty.textContent = '✗ Request failed: ' + ex;
+  }
+}
+
+const browseFolderBtn = document.getElementById('browseFolderBtn');
+if (browseFolderBtn) {
+  browseFolderBtn.addEventListener('click', async function() {
+    driveFolderStack = [];
+    driveFolderSelected = null;
+    document.getElementById('selectedFolderLabel').textContent = 'No folder selected';
+    document.getElementById('confirmFolderBtn').disabled = true;
+    renderDriveFolderBreadcrumb();
+    const modal = new bootstrap.Modal(document.getElementById('driveFolderModal'));
+    modal.show();
+    await loadDriveFolders('root');
+  });
+}
+
+document.getElementById('confirmFolderBtn').addEventListener('click', function() {
+  if (!driveFolderSelected) return;
+  document.getElementById('driveFolderInput').value = driveFolderSelected.name;
+  document.getElementById('driveFolderIdInput').value = driveFolderSelected.id;
+  bootstrap.Modal.getInstance(document.getElementById('driveFolderModal')).hide();
+  document.getElementById('driveFolderMsg').className = 'mt-2 small text-info';
+  document.getElementById('driveFolderMsg').textContent = '📂 Folder selected — click Save to apply.';
 });
 
 // Add allowed sender

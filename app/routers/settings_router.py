@@ -1,6 +1,6 @@
 import re
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
@@ -36,10 +36,12 @@ class AllowedSenderResponse(BaseModel):
 
 class AppSettingsResponse(BaseModel):
     drive_root_folder: str
+    drive_root_folder_id: str
 
 
 class AppSettingsUpdate(BaseModel):
     drive_root_folder: Optional[str] = None
+    drive_root_folder_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -95,15 +97,23 @@ def delete_allowed_sender(sender_id: int, db: Session = Depends(get_db)):
 @router.get("/app", response_model=AppSettingsResponse)
 def get_app_settings(db: Session = Depends(get_db)):
     """Return current application settings."""
-    from app.services.settings_service import get_drive_root_folder
+    from app.services.settings_service import get_drive_root_folder, get_drive_root_folder_id
 
-    return AppSettingsResponse(drive_root_folder=get_drive_root_folder(db))
+    return AppSettingsResponse(
+        drive_root_folder=get_drive_root_folder(db),
+        drive_root_folder_id=get_drive_root_folder_id(db),
+    )
 
 
 @router.put("/app", response_model=AppSettingsResponse)
 def update_app_settings(payload: AppSettingsUpdate, db: Session = Depends(get_db)):
     """Update application settings."""
-    from app.services.settings_service import get_drive_root_folder, set_drive_root_folder
+    from app.services.settings_service import (
+        get_drive_root_folder,
+        get_drive_root_folder_id,
+        set_drive_root_folder,
+        set_drive_root_folder_id,
+    )
 
     if payload.drive_root_folder is not None:
         value = payload.drive_root_folder.strip()
@@ -113,4 +123,50 @@ def update_app_settings(payload: AppSettingsUpdate, db: Session = Depends(get_db
             )
         set_drive_root_folder(db, value)
 
-    return AppSettingsResponse(drive_root_folder=get_drive_root_folder(db))
+    if payload.drive_root_folder_id is not None:
+        set_drive_root_folder_id(db, payload.drive_root_folder_id.strip())
+
+    return AppSettingsResponse(
+        drive_root_folder=get_drive_root_folder(db),
+        drive_root_folder_id=get_drive_root_folder_id(db),
+    )
+
+
+class DriveFolderItem(BaseModel):
+    id: str
+    name: str
+
+
+class DriveFoldersResponse(BaseModel):
+    folders: List[DriveFolderItem]
+    parent_id: str
+
+
+@router.get("/drive-folders", response_model=DriveFoldersResponse)
+def list_drive_folders(
+    parent_id: str = Query(default="root"),
+    db: Session = Depends(get_db),
+):
+    """List Google Drive folders under the given parent (defaults to Drive root)."""
+    from app.services.gmail_service import build_drive_service_from_db
+
+    service = build_drive_service_from_db(db)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Google Drive is not connected")
+
+    try:
+        safe_parent = parent_id.replace("'", "\\'")
+        query = (
+            f"mimeType='application/vnd.google-apps.folder' and "
+            f"'{safe_parent}' in parents and trashed=false"
+        )
+        results = (
+            service.files()
+            .list(q=query, fields="files(id,name)", orderBy="name")
+            .execute()
+        )
+        folders = results.get("files", [])
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Drive API error: {exc}")
+
+    return DriveFoldersResponse(folders=folders, parent_id=parent_id)

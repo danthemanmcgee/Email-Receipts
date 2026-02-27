@@ -4,6 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 DRIVE_ROOT_FOLDER_KEY = "drive_root_folder"
+DRIVE_ROOT_FOLDER_ID_KEY = "drive_root_folder_id"
 
 
 def _extract_email(from_header: str) -> str:
@@ -58,5 +59,32 @@ def set_drive_root_folder(db, value: str) -> None:
         setting.value = value
     else:
         setting = AppSetting(key=DRIVE_ROOT_FOLDER_KEY, value=value)
+        db.add(setting)
+    db.commit()
+
+
+def get_drive_root_folder_id(db) -> str:
+    """Return the stored Drive root folder ID, or empty string if not set."""
+    from app.models.setting import AppSetting
+
+    setting = (
+        db.query(AppSetting).filter(AppSetting.key == DRIVE_ROOT_FOLDER_ID_KEY).first()
+    )
+    if setting and setting.value:
+        return setting.value
+    return ""
+
+
+def set_drive_root_folder_id(db, folder_id: str) -> None:
+    """Persist the Drive root folder ID to the DB."""
+    from app.models.setting import AppSetting
+
+    setting = (
+        db.query(AppSetting).filter(AppSetting.key == DRIVE_ROOT_FOLDER_ID_KEY).first()
+    )
+    if setting:
+        setting.value = folder_id
+    else:
+        setting = AppSetting(key=DRIVE_ROOT_FOLDER_ID_KEY, value=folder_id)
         db.add(setting)
     db.commit()
