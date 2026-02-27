@@ -177,6 +177,22 @@ def apply_label(service, message_id: str, label_name: str) -> bool:
         return False
 
 
+def archive_message(service, message_id: str) -> bool:
+    """Archive a Gmail message by removing the INBOX label."""
+    if not service:
+        return False
+    try:
+        service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body={"removeLabelIds": ["INBOX"]},
+        ).execute()
+        return True
+    except Exception as exc:
+        logger.error("Failed to archive message %s: %s", message_id, exc)
+        return False
+
+
 def extract_attachments_from_message(message: dict) -> list[dict]:
     """Extract PDF attachment metadata from a Gmail message payload."""
     attachments = []
