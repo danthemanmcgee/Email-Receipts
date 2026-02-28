@@ -120,7 +120,7 @@ def _get_account_email(access_token: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 @router.get("/google/gmail/start")
-def gmail_oauth_start():
+def gmail_oauth_start(current_user=Depends(get_current_user)):
     """Begin the Gmail OAuth flow."""
     settings = get_settings()
     if not settings.GOOGLE_OAUTH_CLIENT_ID:
@@ -137,7 +137,7 @@ def gmail_oauth_start():
 
 
 @router.get("/google/drive/start")
-def drive_oauth_start():
+def drive_oauth_start(current_user=Depends(get_current_user)):
     """Begin the Drive OAuth flow."""
     settings = get_settings()
     if not settings.GOOGLE_OAUTH_CLIENT_ID:
@@ -158,6 +158,7 @@ def google_oauth_callback(
     code: str = Query(...),
     state: str = Query(...),
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Handle the OAuth callback for both gmail and drive connections."""
     connection_type = _verify_state(state)
@@ -176,17 +177,20 @@ def google_oauth_callback(
 
     email = _get_account_email(creds.token)
 
-    # Upsert the connection record
+    # Upsert the connection record scoped to the current user
     from app.models.integration import GoogleConnection, ConnectionType
 
     conn_enum = ConnectionType(connection_type)
     conn = (
         db.query(GoogleConnection)
-        .filter(GoogleConnection.connection_type == conn_enum)
+        .filter(
+            GoogleConnection.user_id == current_user.id,
+            GoogleConnection.connection_type == conn_enum,
+        )
         .first()
     )
     if conn is None:
-        conn = GoogleConnection(connection_type=conn_enum)
+        conn = GoogleConnection(connection_type=conn_enum, user_id=current_user.id)
         db.add(conn)
 
     conn.google_account_email = email
@@ -198,7 +202,7 @@ def google_oauth_callback(
     conn.connected_at = datetime.utcnow()
     db.commit()
 
-    logger.info("Saved %s connection for %s", connection_type, email)
+    logger.info("Saved %s connection for user %d (%s)", connection_type, current_user.id, email)
     return RedirectResponse(url="/ui/settings")
 
 

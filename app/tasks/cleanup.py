@@ -20,7 +20,6 @@ def run_cleanup():
     review_cutoff = now - timedelta(days=settings.RETENTION_DAYS_REVIEW)
 
     with SessionLocal() as db:
-        gmail = build_gmail_service_from_db(db)
         deleted_count = 0
         # Processed receipts older than retention
         old_processed = (
@@ -32,6 +31,7 @@ def run_cleanup():
             .all()
         )
         for receipt in old_processed:
+            gmail = build_gmail_service_from_db(db, user_id=receipt.user_id)
             _delete_gmail_message(gmail, receipt.gmail_message_id)
             db.delete(receipt)
             deleted_count += 1
@@ -46,6 +46,7 @@ def run_cleanup():
             .all()
         )
         for receipt in old_review:
+            gmail = build_gmail_service_from_db(db, user_id=receipt.user_id)
             _delete_gmail_message(gmail, receipt.gmail_message_id)
             db.delete(receipt)
             deleted_count += 1

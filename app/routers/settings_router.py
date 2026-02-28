@@ -55,10 +55,15 @@ def list_allowed_senders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all allowed sender email addresses."""
+    """List all allowed sender email addresses for the current user."""
     from app.models.setting import AllowedSender
 
-    return db.query(AllowedSender).order_by(AllowedSender.email).all()
+    return (
+        db.query(AllowedSender)
+        .filter(AllowedSender.user_id == current_user.id)
+        .order_by(AllowedSender.email)
+        .all()
+    )
 
 
 @router.post("/allowed-senders", response_model=AllowedSenderResponse, status_code=201)
@@ -67,20 +72,22 @@ def add_allowed_sender(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Add an email address to the allowed-senders list."""
+    """Add an email address to the current user's allowed-senders list."""
     from app.models.setting import AllowedSender
 
     email = payload.email  # already normalized by the schema validator
 
     existing = (
-        db.query(AllowedSender).filter(AllowedSender.email == email).first()
+        db.query(AllowedSender)
+        .filter(AllowedSender.user_id == current_user.id, AllowedSender.email == email)
+        .first()
     )
     if existing:
         raise HTTPException(
             status_code=409, detail="This email address is already in the allowlist"
         )
 
-    sender = AllowedSender(email=email)
+    sender = AllowedSender(email=email, user_id=current_user.id)
     db.add(sender)
     db.commit()
     db.refresh(sender)
@@ -93,10 +100,12 @@ def delete_allowed_sender(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Remove an email address from the allowed-senders list."""
+    """Remove an email address from the current user's allowed-senders list."""
     from app.models.setting import AllowedSender
 
-    sender = db.query(AllowedSender).filter(AllowedSender.id == sender_id).first()
+    sender = db.query(AllowedSender).filter(
+        AllowedSender.id == sender_id, AllowedSender.user_id == current_user.id
+    ).first()
     if not sender:
         raise HTTPException(status_code=404, detail="Allowed sender not found")
     db.delete(sender)
@@ -112,12 +121,12 @@ def get_app_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return current application settings."""
+    """Return current application settings for the current user."""
     from app.services.settings_service import get_drive_root_folder, get_drive_root_folder_id
 
     return AppSettingsResponse(
-        drive_root_folder=get_drive_root_folder(db),
-        drive_root_folder_id=get_drive_root_folder_id(db),
+        drive_root_folder=get_drive_root_folder(db, user_id=current_user.id),
+        drive_root_folder_id=get_drive_root_folder_id(db, user_id=current_user.id),
     )
 
 
@@ -127,7 +136,7 @@ def update_app_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update application settings."""
+    """Update application settings for the current user."""
     from app.services.settings_service import (
         get_drive_root_folder,
         get_drive_root_folder_id,
@@ -141,14 +150,14 @@ def update_app_settings(
             raise HTTPException(
                 status_code=422, detail="drive_root_folder must not be empty"
             )
-        set_drive_root_folder(db, value)
+        set_drive_root_folder(db, value, user_id=current_user.id)
 
     if payload.drive_root_folder_id is not None:
-        set_drive_root_folder_id(db, payload.drive_root_folder_id.strip())
+        set_drive_root_folder_id(db, payload.drive_root_folder_id.strip(), user_id=current_user.id)
 
     return AppSettingsResponse(
-        drive_root_folder=get_drive_root_folder(db),
-        drive_root_folder_id=get_drive_root_folder_id(db),
+        drive_root_folder=get_drive_root_folder(db, user_id=current_user.id),
+        drive_root_folder_id=get_drive_root_folder_id(db, user_id=current_user.id),
     )
 
 
@@ -181,6 +190,7 @@ def get_drive_access_token(
     conn = (
         db.query(GoogleConnection)
         .filter(
+            GoogleConnection.user_id == current_user.id,
             GoogleConnection.connection_type == ConnectionType.drive,
             GoogleConnection.is_active.is_(True),
         )
@@ -206,7 +216,7 @@ def list_drive_folders(
     """List Google Drive folders under the given parent (defaults to Drive root)."""
     from app.services.gmail_service import build_drive_service_from_db
 
-    service = build_drive_service_from_db(db)
+    service = build_drive_service_from_db(db, user_id=current_user.id)
     if service is None:
         raise HTTPException(status_code=503, detail="Google Drive is not connected")
 

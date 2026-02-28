@@ -68,6 +68,7 @@ class TestJobStatusActivePolling:
     def _mock_db(self, jobs):
         mock_db = MagicMock()
         mock_q = MagicMock()
+        mock_q.filter.return_value = mock_q
         mock_q.order_by.return_value = mock_q
         mock_q.limit.return_value = mock_q
         mock_q.all.return_value = jobs
@@ -79,14 +80,18 @@ class TestJobStatusActivePolling:
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
 
         job = self._mock_job("running")
         mock_db = self._mock_db([job])
+        mock_user = MagicMock()
+        mock_user.id = 1
 
         def override():
             yield mock_db
 
         app.dependency_overrides[get_db] = override
+        app.dependency_overrides[get_current_user] = lambda: mock_user
         try:
             client = TestClient(app)
             resp = client.get("/jobs/recent?limit=5")
@@ -96,20 +101,25 @@ class TestJobStatusActivePolling:
             assert data[0]["status"] == "running"
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
 
     def test_pending_job_returned(self):
         """Pending jobs appear in /jobs/recent response."""
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
 
         job = self._mock_job("pending")
         mock_db = self._mock_db([job])
+        mock_user = MagicMock()
+        mock_user.id = 1
 
         def override():
             yield mock_db
 
         app.dependency_overrides[get_db] = override
+        app.dependency_overrides[get_current_user] = lambda: mock_user
         try:
             client = TestClient(app)
             resp = client.get("/jobs/recent?limit=5")
@@ -118,20 +128,25 @@ class TestJobStatusActivePolling:
             assert data[0]["status"] == "pending"
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
 
     def test_completed_job_returned(self):
         """Completed jobs appear in /jobs/recent response."""
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
 
         job = self._mock_job("completed")
         mock_db = self._mock_db([job])
+        mock_user = MagicMock()
+        mock_user.id = 1
 
         def override():
             yield mock_db
 
         app.dependency_overrides[get_db] = override
+        app.dependency_overrides[get_current_user] = lambda: mock_user
         try:
             client = TestClient(app)
             resp = client.get("/jobs/recent?limit=5")
@@ -140,6 +155,7 @@ class TestJobStatusActivePolling:
             assert data[0]["status"] == "completed"
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
 
 
 # ---------------------------------------------------------------------------

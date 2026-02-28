@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Text, UniqueConstraint, func
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -14,10 +14,11 @@ class ConnectionType(str, enum.Enum):
 class GoogleConnection(Base):
     __tablename__ = "google_connections"
     __table_args__ = (
-        UniqueConstraint("connection_type", name="uq_google_connections_type"),
+        UniqueConstraint("user_id", "connection_type", name="uq_google_connections_user_type"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     connection_type: Mapped[ConnectionType] = mapped_column(String(20))
     google_account_email: Mapped[Optional[str]] = mapped_column(String(255))
     access_token: Mapped[Optional[str]] = mapped_column(Text)

@@ -10,7 +10,7 @@ settings = get_settings()
 
 
 @celery_app.task(name="app.tasks.process_receipt.sync_gmail", bind=True, max_retries=3)
-def sync_gmail(self, job_run_id: int = None):
+def sync_gmail(self, job_run_id: int = None, user_id: int = None):
     """Poll Gmail for new receipts and queue individual processing tasks."""
     try:
         from app.services.gmail_service import build_gmail_service_from_db, list_new_messages
@@ -27,7 +27,7 @@ def sync_gmail(self, job_run_id: int = None):
                     job_run.status = JobStatus.running
                     db.commit()
 
-            gmail = build_gmail_service_from_db(db)
+            gmail = build_gmail_service_from_db(db, user_id=user_id)
             if not gmail:
                 logger.warning("Gmail service unavailable, skipping sync")
                 if job_run_id:
@@ -47,7 +47,7 @@ def sync_gmail(self, job_run_id: int = None):
                 mid = msg["id"]
                 exists = db.query(Receipt).filter(Receipt.gmail_message_id == mid).first()
                 if not exists:
-                    process_receipt_task.delay(mid)
+                    process_receipt_task.delay(mid, user_id=user_id)
                     queued += 1
 
             if job_run_id:
@@ -79,7 +79,7 @@ def sync_gmail(self, job_run_id: int = None):
 
 
 @celery_app.task(name="app.tasks.process_receipt.process_receipt_task", bind=True, max_retries=3)
-def process_receipt_task(self, gmail_message_id: str):
+def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
     """Process a single Gmail message as a receipt."""
     from app.database import SessionLocal
     from app.models.receipt import Receipt, ReceiptStatus, AttachmentLog
@@ -111,6 +111,7 @@ def process_receipt_task(self, gmail_message_id: str):
             receipt = Receipt(
                 gmail_message_id=gmail_message_id,
                 status=ReceiptStatus.processing,
+                user_id=user_id,
             )
             db.add(receipt)
             db.commit()
@@ -120,7 +121,7 @@ def process_receipt_task(self, gmail_message_id: str):
             db.commit()
 
         try:
-            gmail = build_gmail_service_from_db(db)
+            gmail = build_gmail_service_from_db(db, user_id=user_id)
             message = get_message_detail(gmail, gmail_message_id) if gmail else None
 
             if not message:
@@ -148,7 +149,7 @@ def process_receipt_task(self, gmail_message_id: str):
             # Sender allowlist check: if the list is non-empty and the sender
             # is not on it, archive the message and skip processing.
             from app.services.settings_service import is_sender_allowed
-            if not is_sender_allowed(db, receipt.sender or ""):
+            if not is_sender_allowed(db, receipt.sender or "", user_id=user_id):
                 logger.info(
                     "Message %s from '%s' is not in the allowed-senders list; archiving.",
                     gmail_message_id,
@@ -211,7 +212,7 @@ def process_receipt_task(self, gmail_message_id: str):
             receipt.extraction_notes = "; ".join(extraction_result.notes)
 
             # Card resolution
-            card, _ = resolve_card(db, receipt.card_last4_seen)
+            card, _ = resolve_card(db, receipt.card_last4_seen, user_id=user_id)
             if card:
                 receipt.physical_card_id = card.id
 
@@ -219,7 +220,7 @@ def process_receipt_task(self, gmail_message_id: str):
             from app.services.gmail_service import build_drive_service_from_db
             from app.services.drive_service import build_drive_path, upload_pdf_to_drive
 
-            drive = build_drive_service_from_db(db)
+            drive = build_drive_service_from_db(db, user_id=user_id)
             if drive is None:
                 # Drive not connected: flag for review so user can upload manually
                 notes = receipt.extraction_notes or ""
@@ -239,10 +240,10 @@ def process_receipt_task(self, gmail_message_id: str):
                     amount=receipt.amount,
                     currency=receipt.currency,
                     gmail_message_id=gmail_message_id,
-                    root_folder=get_drive_root_folder(db),
+                    root_folder=get_drive_root_folder(db, user_id=user_id),
                 )
                 if pdf_bytes_cache:
-                    root_folder_id = get_drive_root_folder_id(db) or None
+                    root_folder_id = get_drive_root_folder_id(db, user_id=user_id) or None
                     file_id = upload_pdf_to_drive(drive, pdf_bytes_cache, folder_path, filename, root_folder_id=root_folder_id)
                     if file_id:
                         receipt.drive_file_id = file_id
