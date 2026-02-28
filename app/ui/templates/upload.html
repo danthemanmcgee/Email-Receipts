@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Upload Receipt - Email Receipts{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <h2 class="mb-4">📤 Upload Receipt</h2>
+
+        {% if not drive_connected %}
+        <div class="alert alert-warning" role="alert">
+            <strong>Google Drive not connected.</strong>
+            Direct uploads require a Drive connection to store your receipts.
+            <a href="/ui/settings" class="alert-link">Connect Drive in Settings →</a>
+        </div>
+        {% else %}
+
+        <div class="card">
+            <div class="card-body">
+                <form id="upload-form" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Receipt file <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" id="file" name="file"
+                               accept=".pdf,.jpg,.jpeg,.png,.gif,.webp"
+                               required>
+                        <div class="form-text">
+                            Accepted formats: PDF, JPEG, PNG, GIF, WebP.
+                            Maximum size: {{ max_size_mb }} MB.
+                            Images are automatically converted to PDF.
+                        </div>
+                    </div>
+
+                    {% if cards %}
+                    <div class="mb-3">
+                        <label for="card_id" class="form-label">Assign to card <span class="text-muted">(optional)</span></label>
+                        <select class="form-select" id="card_id" name="card_id">
+                            <option value="">— auto-detect from receipt —</option>
+                            {% for card in cards %}
+                            <option value="{{ card.id }}">{{ card.display_name }}{% if card.network %} ({{ card.network }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+
+                    <div id="upload-error" class="alert alert-danger d-none" role="alert"></div>
+                    <div id="upload-success" class="alert alert-success d-none" role="alert"></div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary" id="submit-btn">
+                            📤 Upload Receipt
+                        </button>
+                        <a href="/ui/receipts" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script>
+        document.getElementById('upload-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const form = e.target;
+            const btn = document.getElementById('submit-btn');
+            const errDiv = document.getElementById('upload-error');
+            const okDiv = document.getElementById('upload-success');
+
+            errDiv.classList.add('d-none');
+            okDiv.classList.add('d-none');
+            btn.disabled = true;
+            btn.textContent = '⏳ Uploading…';
+
+            const data = new FormData(form);
+            // Remove empty card_id so server treats it as None
+            if (!data.get('card_id')) data.delete('card_id');
+
+            try {
+                const resp = await fetch('/upload', {method: 'POST', body: data});
+                const json = await resp.json();
+                if (resp.ok) {
+                    okDiv.innerHTML = `Receipt uploaded successfully! <a href="/ui/receipts/${json.id}">View receipt →</a>`;
+                    okDiv.classList.remove('d-none');
+                    form.reset();
+                } else {
+                    errDiv.textContent = json.detail || 'Upload failed.';
+                    errDiv.classList.remove('d-none');
+                }
+            } catch (err) {
+                errDiv.textContent = 'Network error: ' + err.message;
+                errDiv.classList.remove('d-none');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📤 Upload Receipt';
+            }
+        });
+        </script>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
