@@ -5,10 +5,24 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Integration tests can be triggered manually via the Actions UI.
+  # Set "run_integration_tests" to true and ensure the GOOGLE_OAUTH_CLIENT_ID
+  # and GOOGLE_OAUTH_CLIENT_SECRET repository secrets are configured.
+  workflow_dispatch:
+    inputs:
+      run_integration_tests:
+        description: "Run integration tests (requires Google credentials in repository secrets)"
+        type: boolean
+        default: false
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Unit-test job: runs all tests that do NOT require live Google credentials.
+  # No Google secrets are needed.  Integration tests are excluded via the
+  # "not integration" marker filter (configured as the default in pytest.ini).
+  # ---------------------------------------------------------------------------
   test:
-    name: pytest
+    name: pytest (unit tests – no Google credentials required)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,8 +68,71 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run pytest
+      # pytest.ini sets addopts = -m "not integration", so integration tests
+      # are skipped automatically.  Google credentials are NOT required.
+      - name: Run unit tests
         run: pytest tests/ -v
+
+  # ---------------------------------------------------------------------------
+  # Integration-test job: runs ONLY @pytest.mark.integration tests.
+  # This job is skipped unless the GOOGLE_OAUTH_CLIENT_ID secret is configured
+  # in the repository (Settings → Secrets and variables → Actions).
+  # To opt in, add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET as
+  # repository secrets.  See README.md – "Running Tests" for details.
+  # ---------------------------------------------------------------------------
+  integration-test:
+    name: pytest (integration tests – requires Google credentials)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Only run when triggered via workflow_dispatch with run_integration_tests=true.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_integration_tests == true }}
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: receipts
+          POSTGRES_PASSWORD: receipts
+          POSTGRES_DB: receipts
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://receipts:receipts@localhost:5432/receipts
+      REDIS_URL: redis://localhost:6379/0
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run integration tests
+        run: pytest tests/ -v -m integration
 
   lint:
     name: flake8
