@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.routers import gmail, receipts, cards, jobs, health, auth, integrations
-from app.routers import settings_router
+from app.routers import settings_router, upload
 from app.database import engine
 from app.models import receipt as receipt_models  # noqa: F401 - ensures models are registered
 from app.models import card as card_models  # noqa: F401
@@ -26,6 +26,7 @@ app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 app.include_router(settings_router.router, prefix="/settings", tags=["settings"])
+app.include_router(upload.router, prefix="/upload", tags=["upload"])
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/ui/static"), name="static")
@@ -115,6 +116,36 @@ async def ui_review(request: Request):
 
     return templates.TemplateResponse(
         "review.html", {"request": request, "receipts": items}
+    )
+
+
+@app.get("/ui/upload", response_class=HTMLResponse)
+async def ui_upload(request: Request):
+    from app.database import SessionLocal
+    from app.models.integration import GoogleConnection, ConnectionType
+    from app.models.card import PhysicalCard
+
+    with SessionLocal() as db:
+        drive_conn = (
+            db.query(GoogleConnection)
+            .filter(
+                GoogleConnection.connection_type == ConnectionType.drive,
+                GoogleConnection.is_active.is_(True),
+            )
+            .first()
+        )
+        cards = db.query(PhysicalCard).order_by(PhysicalCard.display_name).all()
+
+    from app.config import get_settings as _get_settings
+
+    return templates.TemplateResponse(
+        "upload.html",
+        {
+            "request": request,
+            "drive_connected": drive_conn is not None,
+            "cards": cards,
+            "max_size_mb": _get_settings().MAX_ATTACHMENT_SIZE_MB,
+        },
     )
 
 
