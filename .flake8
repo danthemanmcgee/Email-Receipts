@@ -1,0 +1,15 @@
+[flake8]
+max-line-length = 130
+exclude =
+    migrations,
+    __pycache__,
+    .git,
+    .github,
+    *.pyc
+extend-ignore = E741,W391
+per-file-ignores =
+    tests/*.py:F401,F841
+    app/database.py:F401
+    app/main.py:F401
+    app/routers/receipts.py:F401
+    app/tasks/process_receipt.py:F401
