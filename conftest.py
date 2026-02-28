@@ -14,6 +14,7 @@ from app.models.integration import GoogleConnection  # noqa: E402, F401
 from app.models.setting import AllowedSender, AppSetting  # noqa: E402, F401
 from app.models.job import JobRun  # noqa: E402, F401
 from app.models.user import User  # noqa: E402, F401
+from app.models.statement import CardStatement, StatementLine  # noqa: E402, F401
 
 # Configure all mappers so InstrumentedAttribute.impl is populated
 configure_mappers()
@@ -39,3 +40,5 @@ AttachmentLog.__new__ = staticmethod(_patched_new)
 GmailReceiptLink.__new__ = staticmethod(_patched_new)
 JobRun.__new__ = staticmethod(_patched_new)
 User.__new__ = staticmethod(_patched_new)
+CardStatement.__new__ = staticmethod(_patched_new)
+StatementLine.__new__ = staticmethod(_patched_new)

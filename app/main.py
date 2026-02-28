@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.routers import gmail, receipts, cards, jobs, health, auth, integrations
-from app.routers import settings_router, upload
+from app.routers import settings_router, upload, statements
 from app.database import engine
 from app.models import receipt as receipt_models  # noqa: F401 - ensures models are registered
 from app.models import card as card_models  # noqa: F401
@@ -14,6 +14,7 @@ from app.models import integration as integration_models  # noqa: F401
 from app.models import setting as setting_models  # noqa: F401
 from app.models import job as job_models  # noqa: F401
 from app.models import user as user_models  # noqa: F401
+from app.models import statement as statement_models  # noqa: F401
 
 app = FastAPI(title="Email Receipts", version="1.0.0")
 
@@ -27,6 +28,7 @@ app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 app.include_router(settings_router.router, prefix="/settings", tags=["settings"])
 app.include_router(upload.router, prefix="/upload", tags=["upload"])
+app.include_router(statements.router, prefix="/cards", tags=["statements"])
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/ui/static"), name="static")
