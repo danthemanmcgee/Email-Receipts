@@ -4,6 +4,16 @@ from typing import Optional, List
 from pydantic import BaseModel
 
 
+class MatchedReceiptSummary(BaseModel):
+    id: int
+    merchant: Optional[str] = None
+    amount: Optional[float] = None
+    purchase_date: Optional[date_type] = None
+    drive_file_id: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class StatementLineResponse(BaseModel):
     id: int
     statement_id: int
@@ -14,6 +24,7 @@ class StatementLineResponse(BaseModel):
     merchant: Optional[str] = None
     transaction_id: Optional[str] = None
     currency: str
+    match_status: Optional[str] = "unmatched"
 
     model_config = {"from_attributes": True}
 

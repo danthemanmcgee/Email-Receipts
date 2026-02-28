@@ -15,6 +15,7 @@ def list_receipts(
     status: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    merchant: Optional[str] = Query(None),
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
@@ -32,6 +33,8 @@ def list_receipts(
     if date_to:
         from datetime import date
         q = q.filter(Receipt.purchase_date <= date.fromisoformat(date_to))
+    if merchant:
+        q = q.filter(Receipt.merchant.ilike(f"%{merchant}%"))
 
     total = q.count()
     items = q.order_by(Receipt.created_at.desc()).offset(skip).limit(limit).all()
