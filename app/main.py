@@ -13,6 +13,7 @@ from app.models import card as card_models  # noqa: F401
 from app.models import integration as integration_models  # noqa: F401
 from app.models import setting as setting_models  # noqa: F401
 from app.models import job as job_models  # noqa: F401
+from app.models import user as user_models  # noqa: F401
 
 app = FastAPI(title="Email Receipts", version="1.0.0")
 

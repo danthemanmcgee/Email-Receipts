@@ -269,6 +269,8 @@ class TestPatchReceiptInlineUpdate:
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
+        from app.models.user import User
 
         receipt = self._make_receipt_obj(merchant="Old")
 
@@ -281,10 +283,17 @@ class TestPatchReceiptInlineUpdate:
         mock_db.commit = MagicMock()
         mock_db.refresh = MagicMock()
 
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 1
+
         def override():
             yield mock_db
 
+        def override_user():
+            return mock_user
+
         app.dependency_overrides[get_db] = override
+        app.dependency_overrides[get_current_user] = override_user
         try:
             # Simulate what setattr does
             receipt.merchant = "New Merchant"
@@ -295,12 +304,15 @@ class TestPatchReceiptInlineUpdate:
             assert "merchant" in data
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
 
     def test_patch_returns_amount_and_currency(self):
         """PATCH /receipts/{id} response includes amount and currency fields."""
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
+        from app.models.user import User
 
         receipt = self._make_receipt_obj(amount=10.0, currency="USD")
 
@@ -309,10 +321,17 @@ class TestPatchReceiptInlineUpdate:
         mock_db.commit = MagicMock()
         mock_db.refresh = MagicMock()
 
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 1
+
         def override():
             yield mock_db
 
+        def override_user():
+            return mock_user
+
         app.dependency_overrides[get_db] = override
+        app.dependency_overrides[get_current_user] = override_user
         try:
             client = TestClient(app)
             resp = client.patch("/receipts/1", json={"amount": 99.99, "currency": "EUR"})
@@ -322,3 +341,4 @@ class TestPatchReceiptInlineUpdate:
             assert "currency" in data
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
