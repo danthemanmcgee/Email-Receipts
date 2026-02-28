@@ -253,6 +253,57 @@ If tokens are lost, reconnect via the Settings page.
 
 If you previously used a `token.json` file with combined Gmail + Drive scopes, the app will continue to use that file as a fallback until you connect accounts via the Settings page. Once you connect via Settings, the DB tokens take priority.
 
+## Deployment Notes
+
+### PostgreSQL driver — `psycopg2-binary` vs `psycopg2`
+
+`requirements.txt` ships `psycopg2-binary`, a self-contained binary wheel that
+works out-of-the-box in Docker containers and local virtual environments.
+
+| Scenario | Recommended package |
+|----------|---------------------|
+| Docker / local dev (default) | `psycopg2-binary==2.9.9` (already in `requirements.txt`) |
+| Bare-metal server (compile from source) | Replace with `psycopg2==2.9.9`; ensure `libpq-dev` is installed |
+
+The Docker runtime image already includes `libpq5`, so `psycopg2-binary` is the
+correct choice for containerised deployments.
+
+### WeasyPrint — optional HTML-to-PDF dependency
+
+WeasyPrint is a heavy dependency (pulls in libpango, libcairo, and related
+native libraries). It is **not** required for the core Gmail-polling and
+receipt-extraction pipeline and is therefore excluded from `requirements.txt`
+by default.
+
+**When you need it:**
+
+Install the optional requirements file alongside the core one:
+
+```bash
+pip install -r requirements.txt -r requirements-optional.txt
+```
+
+**Docker build with WeasyPrint enabled:**
+
+```bash
+docker build --build-arg ENABLE_WEASYPRINT=true -t email-receipts .
+```
+
+or in `docker-compose.yml`:
+
+```yaml
+services:
+  app:
+    build:
+      context: .
+      args:
+        ENABLE_WEASYPRINT: "true"
+```
+
+When `ENABLE_WEASYPRINT=true`, the builder stage also installs
+`requirements-optional.txt`, and the runtime stage adds the required native
+libraries (`libpango-1.0-0`, `libcairo2`, etc.).
+
 ## Running Tests
 
 ```bash

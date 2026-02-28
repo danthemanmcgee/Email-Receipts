@@ -4,6 +4,10 @@ celery[redis]==5.4.0
 redis==5.0.4
 sqlalchemy==2.0.30
 alembic==1.13.1
+# psycopg2-binary: pre-compiled binary wheel — suitable for local dev and
+# containerised deployments (libpq5 is present in the runtime image).
+# For a bare-metal production server that compiles extensions from source,
+# replace this with psycopg2==2.9.9 and ensure libpq-dev is available.
 psycopg2-binary==2.9.9
 pydantic==2.7.1
 pydantic-settings==2.3.0
@@ -14,7 +18,11 @@ google-auth-httplib2==0.2.0
 google-api-python-client==2.133.0
 PyPDF2==3.0.1
 reportlab==4.2.0
-weasyprint==68.0
+# WeasyPrint is an *optional* dependency used for HTML-to-PDF rendering.
+# It is NOT required for the core Gmail-polling / receipt-extraction pipeline.
+# To enable it, install requirements-optional.txt and set ENABLE_WEASYPRINT=true
+# (see README.md — Deployment Notes).
+# weasyprint==68.0
 jinja2==3.1.6
 httpx==0.27.0
 python-multipart==0.0.22
