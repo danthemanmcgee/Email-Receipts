@@ -3,7 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.receipt import Receipt, ReceiptStatus
+from app.models.user import User
 from app.schemas.receipt import ReceiptResponse, ReceiptListResponse, ReceiptUpdate
+from app.services.auth_service import get_current_user
 
 router = APIRouter()
 
@@ -16,8 +18,9 @@ def list_receipts(
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    q = db.query(Receipt)
+    q = db.query(Receipt).filter(Receipt.user_id == current_user.id)
     if status:
         try:
             q = q.filter(Receipt.status == ReceiptStatus(status))
@@ -36,16 +39,29 @@ def list_receipts(
 
 
 @router.get("/{receipt_id}", response_model=ReceiptResponse)
-def get_receipt(receipt_id: int, db: Session = Depends(get_db)):
-    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+def get_receipt(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id, Receipt.user_id == current_user.id
+    ).first()
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
     return receipt
 
 
 @router.patch("/{receipt_id}", response_model=ReceiptResponse)
-def update_receipt(receipt_id: int, payload: ReceiptUpdate, db: Session = Depends(get_db)):
-    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+def update_receipt(
+    receipt_id: int,
+    payload: ReceiptUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id, Receipt.user_id == current_user.id
+    ).first()
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
     update_data = payload.model_dump(exclude_unset=True)
@@ -57,8 +73,14 @@ def update_receipt(receipt_id: int, payload: ReceiptUpdate, db: Session = Depend
 
 
 @router.post("/{receipt_id}/reprocess")
-def reprocess_receipt(receipt_id: int, db: Session = Depends(get_db)):
-    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+def reprocess_receipt(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id, Receipt.user_id == current_user.id
+    ).first()
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
     receipt.status = ReceiptStatus.new
@@ -87,12 +109,17 @@ def resolve_card_for_receipt(
     receipt_id: int,
     card_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id, Receipt.user_id == current_user.id
+    ).first()
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
     from app.models.card import PhysicalCard
-    card = db.query(PhysicalCard).filter(PhysicalCard.id == card_id).first()
+    card = db.query(PhysicalCard).filter(
+        PhysicalCard.id == card_id, PhysicalCard.user_id == current_user.id
+    ).first()
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
     receipt.physical_card_id = card_id

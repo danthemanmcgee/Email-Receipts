@@ -10,6 +10,7 @@ if config.config_file_name is not None:
 from app.database import Base
 from app.models.card import PhysicalCard, CardAlias  # noqa: F401
 from app.models.receipt import Receipt, AttachmentLog  # noqa: F401
+from app.models.user import User  # noqa: F401
 
 target_metadata = Base.metadata
 

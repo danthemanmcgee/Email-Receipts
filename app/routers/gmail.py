@@ -1,12 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.models.user import User
+from app.services.auth_service import get_current_user
 
 router = APIRouter()
 
 
 @router.post("/sync")
-def trigger_gmail_sync(db: Session = Depends(get_db)):
+def trigger_gmail_sync(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Trigger Gmail sync — queues celery task.
 
     Returns 503 with an actionable error if no Gmail connection is configured.

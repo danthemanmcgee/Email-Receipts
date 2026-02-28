@@ -18,8 +18,14 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     GOOGLE_OAUTH_CLIENT_SECRET: str = ""
     GOOGLE_OAUTH_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
+    GOOGLE_OAUTH_LOGIN_REDIRECT_URI: str = "http://localhost:8000/auth/google/login/callback"
     GOOGLE_API_KEY: str = ""
     APP_SECRET_KEY: str = "change-me-in-production"
+
+    # Session cookie settings
+    SESSION_COOKIE_NAME: str = "session"
+    SESSION_COOKIE_SECURE: bool = False  # set True in production (requires HTTPS)
+    APP_ENV: str = "development"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

@@ -5,6 +5,8 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.user import User
+from app.services.auth_service import get_current_user
 
 router = APIRouter()
 
@@ -49,7 +51,10 @@ class AppSettingsUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("/allowed-senders", response_model=List[AllowedSenderResponse])
-def list_allowed_senders(db: Session = Depends(get_db)):
+def list_allowed_senders(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """List all allowed sender email addresses."""
     from app.models.setting import AllowedSender
 
@@ -57,7 +62,11 @@ def list_allowed_senders(db: Session = Depends(get_db)):
 
 
 @router.post("/allowed-senders", response_model=AllowedSenderResponse, status_code=201)
-def add_allowed_sender(payload: AllowedSenderCreate, db: Session = Depends(get_db)):
+def add_allowed_sender(
+    payload: AllowedSenderCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Add an email address to the allowed-senders list."""
     from app.models.setting import AllowedSender
 
@@ -79,7 +88,11 @@ def add_allowed_sender(payload: AllowedSenderCreate, db: Session = Depends(get_d
 
 
 @router.delete("/allowed-senders/{sender_id}", status_code=204)
-def delete_allowed_sender(sender_id: int, db: Session = Depends(get_db)):
+def delete_allowed_sender(
+    sender_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Remove an email address from the allowed-senders list."""
     from app.models.setting import AllowedSender
 
@@ -95,7 +108,10 @@ def delete_allowed_sender(sender_id: int, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @router.get("/app", response_model=AppSettingsResponse)
-def get_app_settings(db: Session = Depends(get_db)):
+def get_app_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Return current application settings."""
     from app.services.settings_service import get_drive_root_folder, get_drive_root_folder_id
 
@@ -106,7 +122,11 @@ def get_app_settings(db: Session = Depends(get_db)):
 
 
 @router.put("/app", response_model=AppSettingsResponse)
-def update_app_settings(payload: AppSettingsUpdate, db: Session = Depends(get_db)):
+def update_app_settings(
+    payload: AppSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Update application settings."""
     from app.services.settings_service import (
         get_drive_root_folder,
@@ -147,7 +167,10 @@ class DriveTokenResponse(BaseModel):
 
 
 @router.get("/drive-token", response_model=DriveTokenResponse)
-def get_drive_access_token(db: Session = Depends(get_db)):
+def get_drive_access_token(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Return a valid Drive access token for use with the Google Drive Picker.
 
     The token is refreshed if expired before being returned.
@@ -178,6 +201,7 @@ def get_drive_access_token(db: Session = Depends(get_db)):
 def list_drive_folders(
     parent_id: str = Query(default="root"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """List Google Drive folders under the given parent (defaults to Drive root)."""
     from app.services.gmail_service import build_drive_service_from_db

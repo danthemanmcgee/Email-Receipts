@@ -9,6 +9,7 @@ class PhysicalCard(Base):
     __tablename__ = "physical_cards"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True)
     display_name: Mapped[str] = mapped_column(String(255), unique=True)
     last4: Mapped[Optional[str]] = mapped_column(String(10))
     network: Mapped[Optional[str]] = mapped_column(String(50))

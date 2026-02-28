@@ -174,10 +174,13 @@ class TestCardManagementEndpoints:
 
     def test_update_card_endpoint_exists(self):
         """PUT /cards/{card_id} endpoint is registered."""
+        from unittest.mock import MagicMock
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
         from app.models.card import PhysicalCard
+        from app.models.user import User
 
         card = PhysicalCard.__new__(PhysicalCard)
         card.id = 1
@@ -190,23 +193,34 @@ class TestCardManagementEndpoints:
 
         mock_db = self._mock_db(card=card)
 
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 1
+
         def override_get_db():
             yield mock_db
 
+        def override_user():
+            return mock_user
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user] = override_user
         try:
             client = TestClient(app, raise_server_exceptions=True)
             resp = client.put("/cards/1", json={"display_name": "Updated Name"})
             assert resp.status_code in (200, 409), f"Unexpected status: {resp.status_code}"
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
 
     def test_delete_card_endpoint_returns_204(self):
         """DELETE /cards/{card_id} returns 204 when card exists."""
+        from unittest.mock import MagicMock
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
         from app.models.card import PhysicalCard
+        from app.models.user import User
 
         card = PhysicalCard.__new__(PhysicalCard)
         card.id = 1
@@ -217,42 +231,64 @@ class TestCardManagementEndpoints:
 
         mock_db = self._mock_db(card=card)
 
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 1
+
         def override_get_db():
             yield mock_db
 
+        def override_user():
+            return mock_user
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user] = override_user
         try:
             client = TestClient(app, raise_server_exceptions=True)
             resp = client.delete("/cards/1")
             assert resp.status_code == 204
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
 
     def test_delete_card_returns_404_when_not_found(self):
         """DELETE /cards/{card_id} returns 404 when card is not found."""
+        from unittest.mock import MagicMock
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
+        from app.models.user import User
 
         mock_db = self._mock_db(card=None)
+
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 1
 
         def override_get_db():
             yield mock_db
 
+        def override_user():
+            return mock_user
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user] = override_user
         try:
             client = TestClient(app, raise_server_exceptions=True)
             resp = client.delete("/cards/999")
             assert resp.status_code == 404
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
 
     def test_delete_alias_endpoint_returns_204(self):
         """DELETE /cards/{card_id}/aliases/{alias_id} returns 204 when alias exists."""
+        from unittest.mock import MagicMock
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
         from app.models.card import CardAlias
+        from app.models.user import User
 
         alias = CardAlias.__new__(CardAlias)
         alias.id = 1
@@ -263,16 +299,24 @@ class TestCardManagementEndpoints:
 
         mock_db = self._mock_db(alias=alias)
 
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 1
+
         def override_get_db():
             yield mock_db
 
+        def override_user():
+            return mock_user
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user] = override_user
         try:
             client = TestClient(app, raise_server_exceptions=True)
             resp = client.delete("/cards/1/aliases/1")
             assert resp.status_code == 204
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
 
 
 class TestJobStatusEndpoint:
@@ -359,6 +403,8 @@ class TestReceiptPatchEndpoint:
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
+        from app.models.user import User
         from unittest.mock import MagicMock
 
         receipt = self._make_receipt()
@@ -368,10 +414,17 @@ class TestReceiptPatchEndpoint:
         mock_db.commit = MagicMock()
         mock_db.refresh = MagicMock()
 
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 1
+
         def override_get_db():
             yield mock_db
 
+        def override_user():
+            return mock_user
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user] = override_user
         try:
             client = TestClient(app, raise_server_exceptions=True)
             resp = client.patch(
@@ -382,3 +435,4 @@ class TestReceiptPatchEndpoint:
             assert resp.status_code == 200
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
