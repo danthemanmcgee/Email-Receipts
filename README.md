@@ -16,6 +16,27 @@ Email Receipts polls your Gmail inbox for receipt emails, extracts key data (mer
 - Bootstrap 5 admin UI
 - **Independent Gmail and Drive Google accounts** — read from inbox A, store in Drive B
 
+## Docker Build
+
+The `Dockerfile` uses a two-stage build to keep the runtime image as slim as possible:
+
+| Stage | Base | Purpose |
+|-------|------|---------|
+| `builder` | `python:3.12-slim` | Installs Python dependencies using `gcc` and `libpq-dev` |
+| `runtime` | `python:3.12-slim` | Copies installed packages from `builder`; no compile-time tools |
+
+Build the image manually:
+
+```bash
+docker build -t email-receipts .
+```
+
+Run with Docker Compose (recommended — see [Quick Start](#quick-start-docker)):
+
+```bash
+docker compose up --build
+```
+
 ## Quick Start (Docker)
 
 ### 1. Clone and configure
