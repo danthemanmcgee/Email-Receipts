@@ -1,0 +1,22 @@
+# docker-compose.dev.yml – local development overrides
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+services:
+  app:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./:/app
+      - temp_files:/tmp/receipts
+
+  worker:
+    volumes:
+      - ./:/app
+      - temp_files:/tmp/receipts
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
