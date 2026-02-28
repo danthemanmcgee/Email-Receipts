@@ -22,6 +22,7 @@ def trigger_gmail_sync(
     gmail_conn = (
         db.query(GoogleConnection)
         .filter(
+            GoogleConnection.user_id == current_user.id,
             GoogleConnection.connection_type == ConnectionType.gmail,
             GoogleConnection.is_active.is_(True),
         )
@@ -39,14 +40,14 @@ def trigger_gmail_sync(
             },
         )
 
-    job_run = JobRun(job_type=JobType.gmail_sync, status=JobStatus.pending)
+    job_run = JobRun(job_type=JobType.gmail_sync, status=JobStatus.pending, user_id=current_user.id)
     db.add(job_run)
     db.commit()
     db.refresh(job_run)
 
     try:
         from app.tasks.process_receipt import sync_gmail
-        task = sync_gmail.delay(job_run_id=job_run.id)
+        task = sync_gmail.delay(job_run_id=job_run.id, user_id=current_user.id)
         job_run.task_id = task.id
         job_run.status = JobStatus.running
         db.commit()

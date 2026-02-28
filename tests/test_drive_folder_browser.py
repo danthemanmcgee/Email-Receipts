@@ -181,7 +181,9 @@ class TestListDriveFoldersEndpoint:
 
         with patch("app.services.gmail_service.build_drive_service_from_db", return_value=svc):
             from fastapi import HTTPException
-            result = list_drive_folders(parent_id="root", db=db)
+            mock_user = MagicMock()
+            mock_user.id = 1
+            result = list_drive_folders(parent_id="root", db=db, current_user=mock_user)
 
         assert len(result.folders) == 2
         assert result.folders[0].name == "Alpha"
@@ -197,7 +199,9 @@ class TestListDriveFoldersEndpoint:
 
         with patch("app.services.gmail_service.build_drive_service_from_db", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                list_drive_folders(parent_id="root", db=db)
+                mock_user = MagicMock()
+                mock_user.id = 1
+                list_drive_folders(parent_id="root", db=db, current_user=mock_user)
 
         assert exc_info.value.status_code == 503
 
@@ -213,7 +217,9 @@ class TestListDriveFoldersEndpoint:
 
         with patch("app.services.gmail_service.build_drive_service_from_db", return_value=svc):
             with pytest.raises(HTTPException) as exc_info:
-                list_drive_folders(parent_id="root", db=db)
+                mock_user = MagicMock()
+                mock_user.id = 1
+                list_drive_folders(parent_id="root", db=db, current_user=mock_user)
 
         assert exc_info.value.status_code == 502
 
@@ -227,7 +233,9 @@ class TestListDriveFoldersEndpoint:
         db = MagicMock()
 
         with patch("app.services.gmail_service.build_drive_service_from_db", return_value=svc):
-            result = list_drive_folders(parent_id="custom-parent-id", db=db)
+            mock_user = MagicMock()
+            mock_user.id = 1
+            result = list_drive_folders(parent_id="custom-parent-id", db=db, current_user=mock_user)
 
         assert result.parent_id == "custom-parent-id"
         query_kwarg = svc.files.return_value.list.call_args[1]["q"]
@@ -259,7 +267,9 @@ class TestGetDriveAccessTokenEndpoint:
         db.query.return_value = mock_q
 
         with patch("app.services.gmail_service._credentials_from_connection", return_value=None):
-            result = get_drive_access_token(db=db)
+            mock_user = MagicMock()
+            mock_user.id = 1
+            result = get_drive_access_token(db=db, current_user=mock_user)
 
         assert result.access_token == "test-access-token"
 
@@ -273,8 +283,10 @@ class TestGetDriveAccessTokenEndpoint:
         mock_q.filter.return_value.first.return_value = None
         db.query.return_value = mock_q
 
+        mock_user = MagicMock()
+        mock_user.id = 1
         with pytest.raises(HTTPException) as exc_info:
-            get_drive_access_token(db=db)
+            get_drive_access_token(db=db, current_user=mock_user)
 
         assert exc_info.value.status_code == 503
 
@@ -295,8 +307,10 @@ class TestGetDriveAccessTokenEndpoint:
         mock_q.filter.return_value.first.return_value = conn
         db.query.return_value = mock_q
 
+        mock_user = MagicMock()
+        mock_user.id = 1
         with pytest.raises(HTTPException) as exc_info:
-            get_drive_access_token(db=db)
+            get_drive_access_token(db=db, current_user=mock_user)
 
         assert exc_info.value.status_code == 503
 
@@ -323,7 +337,9 @@ class TestGetDriveAccessTokenEndpoint:
 
         with patch("app.services.gmail_service._credentials_from_connection", return_value=mock_creds):
             with patch("app.services.gmail_service._refresh_and_persist") as mock_refresh:
-                result = get_drive_access_token(db=db)
+                mock_user = MagicMock()
+                mock_user.id = 1
+                result = get_drive_access_token(db=db, current_user=mock_user)
 
         mock_refresh.assert_called_once_with(mock_creds, conn, db)
         assert result.access_token == "old-token"

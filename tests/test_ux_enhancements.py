@@ -327,6 +327,7 @@ class TestJobStatusEndpoint:
         from fastapi.testclient import TestClient
         from app.main import app
         from app.database import get_db
+        from app.services.auth_service import get_current_user
         from unittest.mock import MagicMock
         from app.models.job import JobRun, JobType, JobStatus
         from datetime import datetime
@@ -343,15 +344,20 @@ class TestJobStatusEndpoint:
 
         mock_db = MagicMock()
         mock_q = MagicMock()
+        mock_q.filter.return_value = mock_q
         mock_q.order_by.return_value = mock_q
         mock_q.limit.return_value = mock_q
         mock_q.all.return_value = [job]
         mock_db.query.return_value = mock_q
 
+        mock_user = MagicMock()
+        mock_user.id = 1
+
         def override_get_db():
             yield mock_db
 
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user] = lambda: mock_user
         try:
             client = TestClient(app, raise_server_exceptions=True)
             resp = client.get("/jobs/recent")
@@ -363,6 +369,7 @@ class TestJobStatusEndpoint:
             assert data[0]["status"] == "completed"
         finally:
             app.dependency_overrides.pop(get_db, None)
+            app.dependency_overrides.pop(get_current_user, None)
 
 
 class TestReceiptPatchEndpoint:

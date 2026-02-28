@@ -21,6 +21,7 @@ def google_integration_status(
     gmail_conn = (
         db.query(GoogleConnection)
         .filter(
+            GoogleConnection.user_id == current_user.id,
             GoogleConnection.connection_type == ConnectionType.gmail,
             GoogleConnection.is_active.is_(True),
         )
@@ -29,16 +30,21 @@ def google_integration_status(
     drive_conn = (
         db.query(GoogleConnection)
         .filter(
+            GoogleConnection.user_id == current_user.id,
             GoogleConnection.connection_type == ConnectionType.drive,
             GoogleConnection.is_active.is_(True),
         )
         .first()
     )
 
-    last_sync_at = db.query(func.max(Receipt.created_at)).scalar()
+    last_sync_at = (
+        db.query(func.max(Receipt.created_at))
+        .filter(Receipt.user_id == current_user.id)
+        .scalar()
+    )
     last_upload_at = (
         db.query(func.max(Receipt.updated_at))
-        .filter(Receipt.drive_file_id.isnot(None))
+        .filter(Receipt.user_id == current_user.id, Receipt.drive_file_id.isnot(None))
         .scalar()
     )
 

@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.models.user import User
+from app.services.auth_service import get_current_user
 
 router = APIRouter()
 
@@ -22,11 +24,16 @@ class JobRunResponse(BaseModel):
 
 
 @router.get("/recent", response_model=List[JobRunResponse])
-def list_recent_jobs(limit: int = 20, db: Session = Depends(get_db)):
-    """Return the most recent job runs (newest first)."""
+def list_recent_jobs(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the most recent job runs for the current user (newest first)."""
     from app.models.job import JobRun
     return (
         db.query(JobRun)
+        .filter(JobRun.user_id == current_user.id)
         .order_by(JobRun.started_at.desc())
         .limit(limit)
         .all()
@@ -34,7 +41,7 @@ def list_recent_jobs(limit: int = 20, db: Session = Depends(get_db)):
 
 
 @router.post("/cleanup")
-def trigger_cleanup():
+def trigger_cleanup(current_user: User = Depends(get_current_user)):
     """Trigger cleanup job."""
     try:
         from app.tasks.cleanup import run_cleanup

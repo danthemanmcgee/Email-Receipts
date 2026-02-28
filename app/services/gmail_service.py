@@ -301,21 +301,20 @@ def _refresh_and_persist(creds, conn, db) -> None:
         logger.warning("Token refresh failed: %s", exc)
 
 
-def build_gmail_service_from_db(db):
+def build_gmail_service_from_db(db, user_id: Optional[int] = None):
     """Build Gmail API service using the stored gmail connection tokens.
 
-    Returns None if no active Gmail connection exists in the database.
+    Returns None if no active Gmail connection exists for the given user.
     """
     from app.models.integration import GoogleConnection, ConnectionType
 
-    conn = (
-        db.query(GoogleConnection)
-        .filter(
-            GoogleConnection.connection_type == ConnectionType.gmail,
-            GoogleConnection.is_active.is_(True),
-        )
-        .first()
+    q = db.query(GoogleConnection).filter(
+        GoogleConnection.connection_type == ConnectionType.gmail,
+        GoogleConnection.is_active.is_(True),
     )
+    if user_id is not None:
+        q = q.filter(GoogleConnection.user_id == user_id)
+    conn = q.first()
 
     if conn and conn.refresh_token:
         creds = _credentials_from_connection(conn)
@@ -332,21 +331,20 @@ def build_gmail_service_from_db(db):
     return None
 
 
-def build_drive_service_from_db(db):
+def build_drive_service_from_db(db, user_id: Optional[int] = None):
     """Build Drive API service using the stored drive connection tokens.
 
-    Returns None if no active Drive connection exists in the database.
+    Returns None if no active Drive connection exists for the given user.
     """
     from app.models.integration import GoogleConnection, ConnectionType
 
-    conn = (
-        db.query(GoogleConnection)
-        .filter(
-            GoogleConnection.connection_type == ConnectionType.drive,
-            GoogleConnection.is_active.is_(True),
-        )
-        .first()
+    q = db.query(GoogleConnection).filter(
+        GoogleConnection.connection_type == ConnectionType.drive,
+        GoogleConnection.is_active.is_(True),
     )
+    if user_id is not None:
+        q = q.filter(GoogleConnection.user_id == user_id)
+    conn = q.first()
 
     if conn and conn.refresh_token:
         creds = _credentials_from_connection(conn)
