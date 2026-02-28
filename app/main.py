@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.routers import gmail, receipts, cards, jobs, health, auth, integrations
-from app.routers import settings_router, upload, statements
+from app.routers import settings_router, upload, statements, reconciliation
 from app.database import engine
 from app.models import receipt as receipt_models  # noqa: F401 - ensures models are registered
 from app.models import card as card_models  # noqa: F401
@@ -29,6 +29,7 @@ app.include_router(integrations.router, prefix="/integrations", tags=["integrati
 app.include_router(settings_router.router, prefix="/settings", tags=["settings"])
 app.include_router(upload.router, prefix="/upload", tags=["upload"])
 app.include_router(statements.router, prefix="/cards", tags=["statements"])
+app.include_router(reconciliation.router, tags=["reconciliation"])
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/ui/static"), name="static")
@@ -207,5 +208,117 @@ async def ui_settings(request: Request):
             "google_api_key": get_settings().GOOGLE_API_KEY,
             "google_client_id": get_settings().GOOGLE_OAUTH_CLIENT_ID,
             "cards": cards,
+        },
+    )
+
+
+@app.get("/ui/cards/{card_id}/statements", response_class=HTMLResponse)
+async def ui_statements(request: Request, card_id: int):
+    """List all imported statements for a card, with link to reconcile each."""
+    from app.database import SessionLocal
+    from app.models.statement import CardStatement
+    from app.models.card import PhysicalCard
+
+    with SessionLocal() as db:
+        card = db.query(PhysicalCard).filter(PhysicalCard.id == card_id).first()
+        if not card:
+            return HTMLResponse("Card not found", status_code=404)
+        statements_list = (
+            db.query(CardStatement)
+            .filter(CardStatement.card_id == card_id)
+            .order_by(CardStatement.imported_at.desc())
+            .all()
+        )
+
+    return templates.TemplateResponse(
+        "statements.html",
+        {"request": request, "card": card, "statements": statements_list},
+    )
+
+
+@app.get("/ui/cards/{card_id}/statements/{stmt_id}/reconcile", response_class=HTMLResponse)
+async def ui_reconcile(request: Request, card_id: int, stmt_id: int):
+    """Reconciliation page for a specific statement."""
+    from app.database import SessionLocal
+    from app.models.statement import CardStatement, StatementLine, StatementLineMatch, MatchStatus
+    from app.models.card import PhysicalCard
+    from app.models.receipt import Receipt
+    from app.services.reconciliation_service import suggest_matches
+
+    with SessionLocal() as db:
+        card = db.query(PhysicalCard).filter(PhysicalCard.id == card_id).first()
+        if not card:
+            return HTMLResponse("Card not found", status_code=404)
+
+        statement = (
+            db.query(CardStatement)
+            .filter(CardStatement.id == stmt_id, CardStatement.card_id == card_id)
+            .options(
+                selectinload(CardStatement.lines)
+                .selectinload(StatementLine.match)
+                .selectinload(StatementLineMatch.receipt)
+            )
+            .first()
+        )
+        if not statement:
+            return HTMLResponse("Statement not found", status_code=404)
+
+        all_receipts = (
+            db.query(Receipt)
+            .filter(Receipt.drive_file_id.isnot(None))
+            .all()
+        )
+
+        lines_data = []
+        for line in statement.lines:
+            status = (
+                line.match_status.value
+                if isinstance(line.match_status, MatchStatus)
+                else (line.match_status or "unmatched")
+            )
+            matched_receipt = None
+            if line.match and line.match.receipt:
+                r = line.match.receipt
+                matched_receipt = {
+                    "id": r.id,
+                    "merchant": r.merchant,
+                    "amount": r.amount,
+                    "purchase_date": r.purchase_date,
+                    "drive_file_id": r.drive_file_id,
+                }
+            suggestions = []
+            if status == "unmatched":
+                suggestions = [
+                    {
+                        "id": r.id,
+                        "merchant": r.merchant,
+                        "amount": r.amount,
+                        "purchase_date": r.purchase_date,
+                        "drive_file_id": r.drive_file_id,
+                        "score": score,
+                    }
+                    for r, score in suggest_matches(line, all_receipts)
+                ]
+            lines_data.append(
+                {
+                    "id": line.id,
+                    "txn_date": line.txn_date,
+                    "amount": line.amount,
+                    "merchant": line.merchant,
+                    "transaction_id": line.transaction_id,
+                    "currency": line.currency,
+                    "match_status": status,
+                    "matched_receipt": matched_receipt,
+                    "suggestions": suggestions,
+                }
+            )
+
+    return templates.TemplateResponse(
+        "reconciliation.html",
+        {
+            "request": request,
+            "card": card,
+            "statement": statement,
+            "lines": lines_data,
         },
     )

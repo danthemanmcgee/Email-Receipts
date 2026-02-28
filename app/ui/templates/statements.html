@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Statements — {{ card.display_name }} — Email Receipts{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2>
+    💳 {{ card.display_name }}
+    {% if card.last4 %}<span class="text-muted fs-5">****{{ card.last4 }}</span>{% endif %}
+    — Statements
+  </h2>
+  <a href="/ui/settings" class="btn btn-outline-secondary btn-sm">← Settings</a>
+</div>
+
+{% if statements %}
+<div class="table-responsive">
+  <table class="table table-hover table-sm">
+    <thead class="table-dark">
+      <tr>
+        <th>File</th>
+        <th>Format</th>
+        <th>Transactions</th>
+        <th>Imported</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for stmt in statements %}
+      <tr>
+        <td>{{ stmt.filename }}</td>
+        <td><span class="badge bg-secondary">{{ stmt.format.upper() }}</span></td>
+        <td>{{ stmt.row_count }}</td>
+        <td class="text-muted small">{{ stmt.imported_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>
+          <a href="/ui/cards/{{ card.id }}/statements/{{ stmt.id }}/reconcile"
+             class="btn btn-sm btn-outline-primary">🔗 Reconcile</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-info">
+  No statements imported yet. Import one via the
+  <a href="/ui/settings">Settings → Card Management</a> area or the API.
+</div>
+{% endif %}
+{% endblock %}

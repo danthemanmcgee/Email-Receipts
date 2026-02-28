@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block title %}Reconcile — {{ statement.filename }} — Email Receipts{% endblock %}
+
+{% block content %}
+<style>
+  .row-matched   { background-color: #d1e7dd !important; }
+  .row-unmatched { background-color: #fff3cd !important; }
+  .row-ignored   { background-color: #e9ecef !important; color: #6c757d; }
+  .score-badge   { font-size: 0.75rem; }
+  .suggestion-list { max-height: 260px; overflow-y: auto; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2>🔗 Reconcile Statement</h2>
+    <p class="text-muted mb-0">
+      <strong>{{ card.display_name }}</strong>
+      {% if card.last4 %} ****{{ card.last4 }}{% endif %}
+      &mdash; <em>{{ statement.filename }}</em>
+      <span class="badge bg-secondary ms-2">{{ statement.format.upper() }}</span>
+      <span class="text-muted small ms-2">{{ statement.imported_at.strftime('%Y-%m-%d') }}</span>
+    </p>
+  </div>
+  <a href="/ui/cards/{{ card.id }}/statements" class="btn btn-outline-secondary btn-sm">← Statements</a>
+</div>
+
+<!-- Summary bar -->
+<div class="row g-3 mb-3">
+  <div class="col-auto">
+    <div class="card text-center px-3 py-2 border-success">
+      <div class="fs-4 text-success" id="count-matched">{{ lines | selectattr('match_status','eq','matched') | list | length }}</div>
+      <div class="small text-muted">Matched</div>
+    </div>
+  </div>
+  <div class="col-auto">
+    <div class="card text-center px-3 py-2 border-warning">
+      <div class="fs-4 text-warning" id="count-unmatched">{{ lines | selectattr('match_status','eq','unmatched') | list | length }}</div>
+      <div class="small text-muted">Unmatched</div>
+    </div>
+  </div>
+  <div class="col-auto">
+    <div class="card text-center px-3 py-2 border-secondary">
+      <div class="fs-4 text-secondary" id="count-ignored">{{ lines | selectattr('match_status','eq','ignored') | list | length }}</div>
+      <div class="small text-muted">Ignored</div>
+    </div>
+  </div>
+</div>
+
+<!-- Lines table -->
+<div class="table-responsive">
+  <table class="table table-sm align-middle" id="reconcileTable">
+    <thead class="table-dark">
+      <tr>
+        <th>Date</th>
+        <th>Merchant</th>
+        <th>Amount</th>
+        <th>Status</th>
+        <th>Matched Receipt / Suggestions</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+      <tr id="row-{{ line.id }}" class="row-{{ line.match_status }}">
+        <td class="text-nowrap">{{ line.txn_date }}</td>
+        <td>{{ line.merchant or '—' }}</td>
+        <td class="text-nowrap">{{ "%.2f"|format(line.amount) }} {{ line.currency }}</td>
+        <td id="status-{{ line.id }}">
+          {% if line.match_status == 'matched' %}
+            <span class="badge bg-success">matched</span>
+          {% elif line.match_status == 'ignored' %}
+            <span class="badge bg-secondary">ignored</span>
+          {% else %}
+            <span class="badge bg-warning text-dark">unmatched</span>
+          {% endif %}
+        </td>
+
+        <!-- Matched receipt / suggestions column -->
+        <td id="receipt-col-{{ line.id }}">
+          {% if line.matched_receipt %}
+            <div class="d-flex align-items-center gap-2">
+              <span>
+                <strong>{{ line.matched_receipt.merchant or '—' }}</strong>
+                {% if line.matched_receipt.amount is not none %}
+                  <span class="text-muted small">${{ "%.2f"|format(line.matched_receipt.amount) }}</span>
+                {% endif %}
+                {% if line.matched_receipt.purchase_date %}
+                  <span class="text-muted small">{{ line.matched_receipt.purchase_date }}</span>
+                {% endif %}
+              </span>
+              {% if line.matched_receipt.drive_file_id %}
+              <a href="https://drive.google.com/file/d/{{ line.matched_receipt.drive_file_id }}/view"
+                 target="_blank" class="btn btn-link btn-sm p-0" title="Open in Drive">📄</a>
+              {% endif %}
+              <a href="/ui/receipts/{{ line.matched_receipt.id }}" target="_blank"
+                 class="btn btn-link btn-sm p-0 text-muted" title="View receipt">🔍</a>
+            </div>
+          {% elif line.match_status == 'ignored' %}
+            <span class="text-muted small fst-italic">Ignored — no receipt needed</span>
+          {% elif line.suggestions %}
+            <div>
+              <small class="text-muted">Suggestions:</small>
+              <ul class="list-unstyled mb-0 suggestion-list mt-1">
+                {% for s in line.suggestions %}
+                <li class="d-flex align-items-center gap-2 mb-1">
+                  <span class="badge bg-light text-dark score-badge">{{ "%.0f"|format(s.score * 100) }}%</span>
+                  <span class="small">
+                    <strong>{{ s.merchant or '—' }}</strong>
+                    {% if s.amount is not none %}<span class="text-muted">${{ "%.2f"|format(s.amount) }}</span>{% endif %}
+                    {% if s.purchase_date %}<span class="text-muted">{{ s.purchase_date }}</span>{% endif %}
+                  </span>
+                  <button class="btn btn-outline-success btn-sm py-0 px-1"
+                          onclick="linkReceipt({{ line.id }}, {{ s.id }})"
+                          title="Link this receipt">✓ Link</button>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% else %}
+            <span class="text-muted small fst-italic">No suggestions — </span>
+            <a href="/ui/upload?line_id={{ line.id }}" class="btn btn-outline-secondary btn-sm py-0">
+              📎 Upload receipt
+            </a>
+          {% endif %}
+        </td>
+
+        <!-- Actions column -->
+        <td id="actions-{{ line.id }}" class="text-nowrap">
+          {% if line.match_status == 'matched' %}
+            <button class="btn btn-outline-danger btn-sm" onclick="unlinkReceipt({{ line.id }})">🔓 Unlink</button>
+          {% elif line.match_status == 'ignored' %}
+            <button class="btn btn-outline-secondary btn-sm" onclick="toggleIgnore({{ line.id }})">↩ Restore</button>
+          {% else %}
+            <button class="btn btn-outline-secondary btn-sm me-1" onclick="openManualSearch({{ line.id }})" title="Search receipts">🔍 Search</button>
+            <button class="btn btn-outline-warning btn-sm" onclick="toggleIgnore({{ line.id }})">🚫 Ignore</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-center text-muted">No transaction lines found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Manual receipt search modal -->
+<div class="modal fade" id="searchModal" tabindex="-1" aria-labelledby="searchModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalLabel">🔍 Link Receipt Manually</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="searchModalLineId" value="">
+        <div class="mb-3">
+          <input type="text" id="receiptSearchInput" class="form-control"
+                 placeholder="Search by merchant name…">
+        </div>
+        <div id="receiptSearchResults" class="list-group" style="max-height:320px;overflow-y:auto">
+          <p class="text-muted text-center small mt-3">Type to search receipts stored in Drive.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <a id="uploadCta" href="/ui/upload" class="btn btn-outline-secondary">📎 Upload new receipt</a>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function statusBadgeHtml(status) {
+  if (status === 'matched')   return '<span class="badge bg-success">matched</span>';
+  if (status === 'ignored')   return '<span class="badge bg-secondary">ignored</span>';
+  return '<span class="badge bg-warning text-dark">unmatched</span>';
+}
+
+function updateCounters() {
+  const rows = document.querySelectorAll('#reconcileTable tbody tr[id^="row-"]');
+  let matched = 0, unmatched = 0, ignored = 0;
+  rows.forEach(r => {
+    if (r.classList.contains('row-matched'))   matched++;
+    else if (r.classList.contains('row-ignored'))  ignored++;
+    else                                            unmatched++;
+  });
+  document.getElementById('count-matched').textContent   = matched;
+  document.getElementById('count-unmatched').textContent = unmatched;
+  document.getElementById('count-ignored').textContent   = ignored;
+}
+
+function setRowStatus(lineId, status) {
+  const row = document.getElementById('row-' + lineId);
+  row.classList.remove('row-matched', 'row-unmatched', 'row-ignored');
+  row.classList.add('row-' + status);
+  document.getElementById('status-' + lineId).innerHTML = statusBadgeHtml(status);
+  updateCounters();
+}
+
+// ── Link (confirm suggestion or manual search result) ─────────────────────
+
+async function linkReceipt(lineId, receiptId) {
+  const resp = await fetch(`/statements/lines/${lineId}/match/${receiptId}`, {method: 'POST'});
+  if (!resp.ok) { alert('Link failed: ' + (await resp.json()).detail); return; }
+  // Reload the page to get fresh receipt info in the matched column
+  location.reload();
+}
+
+// ── Unlink ────────────────────────────────────────────────────────────────
+
+async function unlinkReceipt(lineId) {
+  if (!confirm('Remove this receipt link?')) return;
+  const resp = await fetch(`/statements/lines/${lineId}/match`, {method: 'DELETE'});
+  if (!resp.ok) { alert('Unlink failed.'); return; }
+  location.reload();
+}
+
+// ── Ignore / restore ──────────────────────────────────────────────────────
+
+async function toggleIgnore(lineId) {
+  const resp = await fetch(`/statements/lines/${lineId}/ignore`, {method: 'PATCH'});
+  if (!resp.ok) { alert('Failed to update status.'); return; }
+  const data = await resp.json();
+  setRowStatus(lineId, data.status);
+  const actionsEl = document.getElementById('actions-' + lineId);
+  const receiptCol = document.getElementById('receipt-col-' + lineId);
+  if (data.status === 'ignored') {
+    actionsEl.innerHTML = `<button class="btn btn-outline-secondary btn-sm" onclick="toggleIgnore(${lineId})">↩ Restore</button>`;
+    receiptCol.innerHTML = '<span class="text-muted small fst-italic">Ignored — no receipt needed</span>';
+  } else {
+    actionsEl.innerHTML = `
+      <button class="btn btn-outline-secondary btn-sm me-1" onclick="openManualSearch(${lineId})" title="Search receipts">🔍 Search</button>
+      <button class="btn btn-outline-warning btn-sm" onclick="toggleIgnore(${lineId})">🚫 Ignore</button>`;
+    receiptCol.innerHTML = `<span class="text-muted small fst-italic">No suggestions — </span>
+      <a href="/ui/upload?line_id=${lineId}" class="btn btn-outline-secondary btn-sm py-0">📎 Upload receipt</a>`;
+  }
+}
+
+// ── Manual receipt search modal ───────────────────────────────────────────
+
+let _searchTimer = null;
+
+function openManualSearch(lineId) {
+  document.getElementById('searchModalLineId').value = lineId;
+  document.getElementById('uploadCta').href = '/ui/upload?line_id=' + lineId;
+  document.getElementById('receiptSearchInput').value = '';
+  document.getElementById('receiptSearchResults').innerHTML =
+    '<p class="text-muted text-center small mt-3">Type to search receipts stored in Drive.</p>';
+  new bootstrap.Modal(document.getElementById('searchModal')).show();
+}
+
+document.getElementById('receiptSearchInput').addEventListener('input', function() {
+  clearTimeout(_searchTimer);
+  const q = this.value.trim();
+  if (!q) return;
+  _searchTimer = setTimeout(() => searchReceipts(q), 300);
+});
+
+async function searchReceipts(query) {
+  const lineId = document.getElementById('searchModalLineId').value;
+  const resp = await fetch(`/receipts?merchant=${encodeURIComponent(query)}&limit=20`);
+  const el = document.getElementById('receiptSearchResults');
+  if (!resp.ok) { el.innerHTML = '<p class="text-danger small">Search failed.</p>'; return; }
+  const data = await resp.json();
+  const receipts = Array.isArray(data) ? data : (data.items || []);
+  const driveOnly = receipts.filter(r => r.drive_file_id);
+  if (!driveOnly.length) {
+    el.innerHTML = '<p class="text-muted text-center small mt-3">No Drive-stored receipts found.</p>';
+    return;
+  }
+  el.innerHTML = driveOnly.map(r => `
+    <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+            onclick="linkFromSearch(${lineId}, ${r.id})">
+      <div>
+        <strong>${r.merchant || '—'}</strong>
+        <span class="text-muted small ms-2">${r.purchase_date || ''}</span>
+      </div>
+      <span class="text-muted small">${r.amount != null ? '$' + r.amount.toFixed(2) : ''}</span>
+    </button>`).join('');
+}
+
+async function linkFromSearch(lineId, receiptId) {
+  bootstrap.Modal.getInstance(document.getElementById('searchModal')).hide();
+  await linkReceipt(lineId, receiptId);
+}
+</script>
+{% endblock %}
