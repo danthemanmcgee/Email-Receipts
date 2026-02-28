@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from datetime import date as date_type
 from typing import Optional
-from sqlalchemy import String, Text, ForeignKey, func
+from sqlalchemy import String, Text, ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -18,6 +18,9 @@ class ReceiptStatus(str, enum.Enum):
 
 class Receipt(Base):
     __tablename__ = "receipts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "content_hash", name="uq_receipt_user_content_hash"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True)
@@ -41,7 +44,7 @@ class Receipt(Base):
     # Drive output
     drive_file_id: Mapped[Optional[str]] = mapped_column(String(255))
     drive_path: Mapped[Optional[str]] = mapped_column(String(1000))
-    content_hash: Mapped[Optional[str]] = mapped_column(String(64))
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     # Timestamps
     processed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=func.now())
@@ -50,6 +53,9 @@ class Receipt(Base):
     # Relationships
     attachment_logs: Mapped[list["AttachmentLog"]] = relationship(
         "AttachmentLog", back_populates="receipt", cascade="all, delete-orphan"
+    )
+    gmail_links: Mapped[list["GmailReceiptLink"]] = relationship(
+        "GmailReceiptLink", back_populates="receipt", cascade="all, delete-orphan"
     )
     physical_card: Mapped[Optional["PhysicalCard"]] = relationship("PhysicalCard")
 
@@ -66,6 +72,26 @@ class AttachmentLog(Base):
     created_at: Mapped[datetime] = mapped_column(default=func.now())
 
     receipt: Mapped["Receipt"] = relationship("Receipt", back_populates="attachment_logs")
+
+
+class GmailReceiptLink(Base):
+    """Links a Gmail message ID to a canonical Receipt.
+
+    A single Receipt (identified by content_hash) may be referenced by multiple
+    Gmail messages (e.g. forwarded duplicates).  Each row here records one such
+    link so that every email pointing to the same document can be tracked without
+    uploading duplicate files to Drive.
+    """
+
+    __tablename__ = "gmail_receipt_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    receipt_id: Mapped[int] = mapped_column(ForeignKey("receipts.id"), index=True)
+    gmail_message_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(default=func.now())
+
+    receipt: Mapped["Receipt"] = relationship("Receipt", back_populates="gmail_links")
 
 
 # Import PhysicalCard for relationship resolution

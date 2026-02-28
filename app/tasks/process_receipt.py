@@ -15,7 +15,7 @@ def sync_gmail(self, job_run_id: int = None, user_id: int = None):
     try:
         from app.services.gmail_service import build_gmail_service_from_db, list_new_messages
         from app.database import SessionLocal
-        from app.models.receipt import Receipt
+        from app.models.receipt import Receipt, GmailReceiptLink
         from app.models.job import JobRun, JobStatus
         from datetime import datetime as dt
 
@@ -47,8 +47,16 @@ def sync_gmail(self, job_run_id: int = None, user_id: int = None):
                 mid = msg["id"]
                 exists = db.query(Receipt).filter(Receipt.gmail_message_id == mid).first()
                 if not exists:
-                    process_receipt_task.delay(mid, user_id=user_id)
-                    queued += 1
+                    # Also skip messages already tracked in gmail_receipt_links
+                    # (e.g. a duplicate that was processed and linked in a prior run)
+                    link_exists = (
+                        db.query(GmailReceiptLink)
+                        .filter(GmailReceiptLink.gmail_message_id == mid)
+                        .first()
+                    )
+                    if not link_exists:
+                        process_receipt_task.delay(mid, user_id=user_id)
+                        queued += 1
 
             if job_run_id:
                 job_run = db.query(JobRun).filter(JobRun.id == job_run_id).first()
@@ -82,7 +90,7 @@ def sync_gmail(self, job_run_id: int = None, user_id: int = None):
 def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
     """Process a single Gmail message as a receipt."""
     from app.database import SessionLocal
-    from app.models.receipt import Receipt, ReceiptStatus, AttachmentLog
+    from app.models.receipt import Receipt, ReceiptStatus, AttachmentLog, GmailReceiptLink
     from app.services.gmail_service import (
         build_gmail_service,
         build_gmail_service_from_db,
@@ -99,12 +107,26 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
     from app.services.card_service import resolve_card
 
     with SessionLocal() as db:
-        # Idempotency check
+        # Idempotency check — receipt already processed
         receipt = db.query(Receipt).filter(
             Receipt.gmail_message_id == gmail_message_id
         ).first()
         if receipt and receipt.status not in (ReceiptStatus.new, ReceiptStatus.failed):
             logger.info("Message %s already processed, skipping", gmail_message_id)
+            return {"status": "skipped"}
+
+        # Idempotency check — message already linked to a canonical receipt
+        existing_link = (
+            db.query(GmailReceiptLink)
+            .filter(GmailReceiptLink.gmail_message_id == gmail_message_id)
+            .first()
+        )
+        if existing_link:
+            logger.info(
+                "Message %s already linked to receipt %d, skipping",
+                gmail_message_id,
+                existing_link.receipt_id,
+            )
             return {"status": "skipped"}
 
         if not receipt:
@@ -193,7 +215,47 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
                         gmail, gmail_message_id, att_info["attachment_id"]
                     )
                     if pdf_bytes_cache:
-                        receipt.content_hash = hashlib.sha256(pdf_bytes_cache).hexdigest()
+                        content_hash = hashlib.sha256(pdf_bytes_cache).hexdigest()
+                        receipt.content_hash = content_hash
+
+                        # Deduplication: check if an identical document already
+                        # exists for this user (different Receipt, same hash).
+                        canonical = (
+                            db.query(Receipt)
+                            .filter(
+                                Receipt.content_hash == content_hash,
+                                Receipt.user_id == user_id,
+                                Receipt.id != receipt.id,
+                            )
+                            .first()
+                        )
+                        if canonical:
+                            logger.info(
+                                "Duplicate content_hash %s for message %s — "
+                                "reusing drive_file_id %s from receipt %d",
+                                content_hash,
+                                gmail_message_id,
+                                canonical.drive_file_id,
+                                canonical.id,
+                            )
+                            # Remove the placeholder receipt and record the link
+                            # to the canonical document instead.
+                            db.delete(receipt)
+                            link = GmailReceiptLink(
+                                receipt_id=canonical.id,
+                                gmail_message_id=gmail_message_id,
+                                user_id=user_id,
+                            )
+                            db.add(link)
+                            db.commit()
+                            if gmail:
+                                apply_label(gmail, gmail_message_id, LABEL_MAP["processed"])
+                            return {
+                                "status": "duplicate",
+                                "receipt_id": canonical.id,
+                                "drive_file_id": canonical.drive_file_id,
+                            }
+
                         extraction_result = extract_from_pdf_bytes(pdf_bytes_cache)
 
             if not extraction_result:
@@ -259,6 +321,14 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
                 receipt.status = ReceiptStatus.needs_review
                 if gmail:
                     apply_label(gmail, gmail_message_id, LABEL_MAP["needs_review"])
+
+            # Record the canonical gmail → receipt link
+            link = GmailReceiptLink(
+                receipt_id=receipt.id,
+                gmail_message_id=gmail_message_id,
+                user_id=user_id,
+            )
+            db.add(link)
 
             db.commit()
             return {"status": receipt.status.value, "receipt_id": receipt.id}
