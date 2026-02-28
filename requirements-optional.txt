@@ -1,0 +1,12 @@
+# Optional dependencies — not required for the core pipeline.
+#
+# WeasyPrint: HTML-to-PDF rendering engine.
+# Heavy native dependency (libpango, libcairo, etc.).
+# Only needed when HTML-to-PDF generation is enabled.
+#
+# Install alongside core requirements:
+#   pip install -r requirements.txt -r requirements-optional.txt
+#
+# When building the Docker image, pass --build-arg ENABLE_WEASYPRINT=true
+# (see README.md — Deployment Notes).
+weasyprint==68.0
