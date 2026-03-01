@@ -255,6 +255,41 @@ If you previously used a `token.json` file with combined Gmail + Drive scopes, t
 
 ## Deployment Notes
 
+### Security — non-root container user
+
+The runtime stage of the `Dockerfile` creates a dedicated `appuser` account and
+switches to it before starting the application:
+
+```dockerfile
+RUN useradd --no-create-home --shell /bin/false appuser \
+    && mkdir -p /tmp/receipts \
+    && chown appuser /tmp/receipts
+USER appuser
+```
+
+This means the `app` and `worker` services (both built from this image) run as a
+non-privileged user.  You can verify this after starting the stack:
+
+```bash
+docker compose exec app whoami   # → appuser
+```
+
+### Automatic restart policy
+
+All services in `docker-compose.yml` are configured with `restart: unless-stopped`.
+Containers will be restarted automatically after an unexpected crash or host
+reboot — they only stay down when you explicitly stop them with
+`docker compose stop` or `docker compose down`.
+
+### App healthcheck
+
+The `app` service exposes a Docker healthcheck that polls `GET /health` every
+30 seconds.  You can check the reported health state with:
+
+```bash
+docker compose ps   # STATUS column shows "healthy" / "starting" / "unhealthy"
+```
+
 ### PostgreSQL driver — `psycopg2-binary` vs `psycopg2`
 
 `requirements.txt` ships `psycopg2-binary`, a self-contained binary wheel that
