@@ -110,41 +110,56 @@
             <div class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></div>
             Loading preview…
         </div>
+        <div id="pdf-error" class="d-none p-3 text-center text-muted">
+            <p>Preview not available. <a href="https://drive.google.com/file/d/{{ receipt.drive_file_id }}/view" target="_blank">Open in Drive ↗</a> to view the file.</p>
+        </div>
         <iframe
+            id="pdf-preview-frame"
             src="https://drive.google.com/file/d/{{ receipt.drive_file_id }}/preview"
             width="100%"
             height="500"
             allow="autoplay"
             style="border:0;display:block"
             title="Receipt PDF Preview"
-            onload="document.getElementById('pdf-loading').style.display='none'">
+            onload="document.getElementById('pdf-loading').style.display='none'"
+            onerror="document.getElementById('pdf-loading').style.display='none';document.getElementById('pdf-error').classList.remove('d-none');document.getElementById('pdf-preview-frame').style.display='none'">
         </iframe>
     </div>
 </div>
-{% endif %}
-
-{% if receipt.drive_path and not receipt.drive_file_id %}
-<div class="card mb-3">
-    <div class="card-header">Drive Storage</div>
+{% else %}
+<div class="card mb-3 border-secondary">
+    <div class="card-header text-muted">📄 Receipt PDF</div>
     <div class="card-body">
-        <dl class="row mb-0">
-            <dt class="col-sm-2">Path</dt>
-            <dd class="col-sm-10"><code>{{ receipt.drive_path }}</code></dd>
-        </dl>
+        {% if receipt.drive_path %}
+        <p class="mb-2"><strong>Drive path:</strong> <code>{{ receipt.drive_path }}</code></p>
+        <p class="text-muted small mb-2">A Drive file ID is not recorded for this receipt — the file may not have been uploaded yet, or the upload may have failed.</p>
+        {% else %}
+        <p class="text-muted small mb-2">No PDF is stored for this receipt. This can happen when Drive is not connected or no PDF attachment was found in the original email.</p>
+        {% endif %}
+        <p class="mb-0"><strong>Status:</strong> <span class="badge badge-{{ receipt.status.value }}">{{ receipt.status.value.replace('_',' ') }}</span>
+        — <button class="btn btn-warning btn-sm" onclick="reprocess({{ receipt.id }})">🔄 Reprocess to retry upload</button></p>
     </div>
 </div>
 {% endif %}
 
 {% if receipt.attachment_logs %}
 <div class="card mb-3">
-    <div class="card-header">Attachment Decisions</div>
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Attachment Decisions</span>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary small">Latest run</span>
+            {% if has_prior_attachment_runs %}
+            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#allAttachmentRuns">Show all runs</button>
+            {% endif %}
+        </div>
+    </div>
     <div class="card-body p-0">
         <table class="table table-sm mb-0">
             <thead class="table-light">
                 <tr><th>Filename</th><th>Score</th><th>Decision</th><th>Reason</th></tr>
             </thead>
             <tbody>
-                {% for log in receipt.attachment_logs %}
+                {% for log in latest_attachment_logs %}
                 <tr>
                     <td>{{ log.filename }}</td>
                     <td>{{ log.score }}</td>
@@ -154,6 +169,27 @@
                 {% endfor %}
             </tbody>
         </table>
+        {% if has_prior_attachment_runs %}
+        <div class="collapse" id="allAttachmentRuns">
+            <div class="card-header bg-light small text-muted">All scoring runs (oldest first)</div>
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr><th>Filename</th><th>Score</th><th>Decision</th><th>Reason</th><th>Run time</th></tr>
+                </thead>
+                <tbody>
+                    {% for log in receipt.attachment_logs | sort(attribute='created_at') %}
+                    <tr>
+                        <td>{{ log.filename }}</td>
+                        <td>{{ log.score }}</td>
+                        <td><span class="badge {% if log.decision == 'selected' %}bg-success{% else %}bg-secondary{% endif %}">{{ log.decision }}</span></td>
+                        <td><small>{{ log.reason }}</small></td>
+                        <td><small class="text-muted">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</small></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}

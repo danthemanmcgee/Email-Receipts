@@ -119,9 +119,10 @@ function _updateExtractionView(data) {
 
 const JOB_STATUS_ICONS = {running: '⏳', pending: '🕐', completed: '✅', failed: '❌'};
 const JOB_TYPE_LABELS = {gmail_sync: 'Gmail Sync', process_receipt: 'Process Receipt', reprocess_receipt: 'Reprocess Receipt'};
-const MAX_RECENT_JOBS = 5;
+const MAX_RECENT_JOBS = 20;
 
 let _jobPollTimer = null;
+let _showingHistory = false;
 
 function showJobStatusBanner() {
     const banner = document.getElementById('job-status-banner');
@@ -138,12 +139,29 @@ async function loadJobStatus() {
         const resp = await fetch(`/jobs/recent?limit=${MAX_RECENT_JOBS}`);
         if (!resp.ok) return;
         const jobs = await resp.json();
+
+        const activeJobs = jobs.filter(j => j.status === 'running' || j.status === 'pending');
+        const doneJobs = jobs.filter(j => j.status !== 'running' && j.status !== 'pending');
+        const hasActive = activeJobs.length > 0;
+        const displayJobs = _showingHistory ? jobs : (hasActive ? activeJobs : jobs.slice(0, 5));
+
+        // Update polling indicator in banner header
+        const pollingIndicator = document.getElementById('job-polling-indicator');
+        if (pollingIndicator) {
+            if (hasActive) {
+                pollingIndicator.innerHTML = '<span class="spinner-border spinner-border-sm text-info me-1" role="status" aria-hidden="true"></span><small class="text-info">Polling…</small>';
+            } else {
+                pollingIndicator.innerHTML = '';
+            }
+        }
+
         if (!jobs.length) {
             body.innerHTML = '<div class="text-muted small">No recent jobs.</div>';
             _stopJobPolling();
             return;
         }
-        body.innerHTML = jobs.map(j => {
+
+        const jobsHtml = displayJobs.map(j => {
             const icon = JOB_STATUS_ICONS[j.status] || '❓';
             const label = JOB_TYPE_LABELS[j.job_type] || j.job_type;
             const started = j.started_at ? new Date(j.started_at).toLocaleString() : '';
@@ -163,8 +181,16 @@ async function loadJobStatus() {
             </div>`;
         }).join('');
 
-        // Auto-poll while any job is running or pending
-        const hasActive = jobs.some(j => j.status === 'running' || j.status === 'pending');
+        const historyToggle = doneJobs.length > 0 && !hasActive
+            ? `<div class="mt-2 pt-1 border-top">
+                <button class="btn btn-link btn-sm p-0 text-muted" onclick="toggleJobHistory()">
+                    ${_showingHistory ? '▲ Show active only' : `▼ Show history (${doneJobs.length})`}
+                </button>
+               </div>`
+            : '';
+
+        body.innerHTML = jobsHtml + historyToggle;
+
         if (hasActive) {
             _scheduleJobPoll();
         } else {
@@ -173,6 +199,11 @@ async function loadJobStatus() {
     } catch (e) {
         if (body) body.innerHTML = '<div class="text-muted small">Could not load job status.</div>';
     }
+}
+
+function toggleJobHistory() {
+    _showingHistory = !_showingHistory;
+    loadJobStatus();
 }
 
 function _scheduleJobPoll() {

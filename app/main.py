@@ -3,6 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session, selectinload
+from datetime import timedelta
 
 from app.config import get_settings
 from app.routers import gmail, receipts, cards, jobs, health, auth, integrations
@@ -15,6 +16,21 @@ from app.models import setting as setting_models  # noqa: F401
 from app.models import job as job_models  # noqa: F401
 from app.models import user as user_models  # noqa: F401
 from app.models import statement as statement_models  # noqa: F401
+
+
+def _latest_attachment_logs(logs):
+    """Return only the logs from the most recent scoring run.
+
+    Logs from a single run are inserted in the same DB transaction so their
+    ``created_at`` timestamps are very close together.  We consider all logs
+    within 60 seconds of the most-recent log to belong to the same run.
+    """
+    if not logs:
+        return []
+    max_created = max(log.created_at for log in logs)
+    cutoff = max_created - timedelta(seconds=60)
+    return [log for log in logs if log.created_at >= cutoff]
+
 
 app = FastAPI(title="Email Receipts", version="1.0.0")
 
@@ -99,7 +115,13 @@ async def ui_receipt_detail(request: Request, receipt_id: int):
 
     return templates.TemplateResponse(
         "detail.html",
-        {"request": request, "receipt": receipt, "cards": cards_list},
+        {
+            "request": request,
+            "receipt": receipt,
+            "cards": cards_list,
+            "latest_attachment_logs": _latest_attachment_logs(receipt.attachment_logs),
+            "has_prior_attachment_runs": len(receipt.attachment_logs) > len(_latest_attachment_logs(receipt.attachment_logs)),
+        },
     )
 
 
