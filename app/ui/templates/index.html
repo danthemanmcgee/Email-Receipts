@@ -12,7 +12,10 @@
 <div id="job-status-banner" class="mb-3" style="display:none">
     <div class="card border-info">
         <div class="card-header bg-info bg-opacity-10 d-flex justify-content-between align-items-center py-2">
-            <strong>⚙️ Processing Status</strong>
+            <div class="d-flex align-items-center gap-2">
+                <strong>⚙️ Processing Status</strong>
+                <span id="job-polling-indicator"></span>
+            </div>
             <button type="button" class="btn-close btn-sm" onclick="document.getElementById('job-status-banner').style.display='none'"></button>
         </div>
         <div class="card-body p-2" id="job-status-body">

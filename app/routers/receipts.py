@@ -100,7 +100,7 @@ def reprocess_receipt(
         db.add(job_run)
         db.commit()
         db.refresh(job_run)
-        task = process_receipt_task.delay(receipt.gmail_message_id, user_id=current_user.id)
+        task = process_receipt_task.delay(receipt.gmail_message_id, user_id=current_user.id, job_run_id=job_run.id)
         job_run.task_id = task.id
         db.commit()
         return {"status": "queued", "task_id": task.id, "job_run_id": job_run.id}

@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from datetime import datetime as dt
 from typing import Optional
 
 from app.tasks.celery_app import celery_app
@@ -17,7 +18,6 @@ def sync_gmail(self, job_run_id: int = None, user_id: int = None):
         from app.database import SessionLocal
         from app.models.receipt import Receipt, GmailReceiptLink
         from app.models.job import JobRun, JobStatus
-        from datetime import datetime as dt
 
         with SessionLocal() as db:
             # Update job run to running
@@ -72,7 +72,6 @@ def sync_gmail(self, job_run_id: int = None, user_id: int = None):
         try:
             from app.database import SessionLocal
             from app.models.job import JobRun, JobStatus
-            from datetime import datetime as dt
             if job_run_id:
                 with SessionLocal() as db:
                     job_run = db.query(JobRun).filter(JobRun.id == job_run_id).first()
@@ -87,7 +86,7 @@ def sync_gmail(self, job_run_id: int = None, user_id: int = None):
 
 
 @celery_app.task(name="app.tasks.process_receipt.process_receipt_task", bind=True, max_retries=3)
-def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
+def process_receipt_task(self, gmail_message_id: str, user_id: int = None, job_run_id: int = None):
     """Process a single Gmail message as a receipt."""
     from app.database import SessionLocal
     from app.models.receipt import Receipt, ReceiptStatus, AttachmentLog, GmailReceiptLink
@@ -106,6 +105,21 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
     from app.services.extraction_service import extract_from_pdf_bytes, extract_from_text
     from app.services.card_service import resolve_card
 
+    def _complete_job_run(db, jrid, status, details=None, error=None):
+        """Update a JobRun record to a terminal state."""
+        if not jrid:
+            return
+        from app.models.job import JobRun, JobStatus
+        job_run = db.query(JobRun).filter(JobRun.id == jrid).first()
+        if job_run:
+            job_run.status = status
+            if details:
+                job_run.details = details
+            if error:
+                job_run.error_message = error
+            job_run.completed_at = dt.utcnow()
+            db.commit()
+
     with SessionLocal() as db:
         # Idempotency check — receipt already processed
         receipt = db.query(Receipt).filter(
@@ -113,6 +127,8 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
         ).first()
         if receipt and receipt.status not in (ReceiptStatus.new, ReceiptStatus.failed):
             logger.info("Message %s already processed, skipping", gmail_message_id)
+            from app.models.job import JobStatus
+            _complete_job_run(db, job_run_id, JobStatus.completed, details="skipped – already processed")
             return {"status": "skipped"}
 
         # Idempotency check — message already linked to a canonical receipt
@@ -127,6 +143,8 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
                 gmail_message_id,
                 existing_link.receipt_id,
             )
+            from app.models.job import JobStatus
+            _complete_job_run(db, job_run_id, JobStatus.completed, details="skipped – already linked")
             return {"status": "skipped"}
 
         if not receipt:
@@ -150,6 +168,8 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
                 receipt.status = ReceiptStatus.failed
                 receipt.extraction_notes = "Could not fetch Gmail message"
                 db.commit()
+                from app.models.job import JobStatus
+                _complete_job_run(db, job_run_id, JobStatus.failed, error="Could not fetch Gmail message")
                 return {"status": "failed", "reason": "no_message"}
 
             # Populate basic fields
@@ -181,6 +201,8 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
                     archive_message(gmail, gmail_message_id)
                 db.delete(receipt)
                 db.commit()
+                from app.models.job import JobStatus
+                _complete_job_run(db, job_run_id, JobStatus.completed, details="archived – sender not allowed")
                 return {"status": "archived", "reason": "sender_not_allowed"}
 
             # Handle attachments
@@ -291,6 +313,11 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
                 if gmail:
                     apply_label(gmail, gmail_message_id, LABEL_MAP["needs_review"])
                 db.commit()
+                from app.models.job import JobStatus
+                _complete_job_run(
+                    db, job_run_id, JobStatus.completed,
+                    details=f"needs_review – drive_not_connected, receipt_id={receipt.id}",
+                )
                 return {"status": receipt.status.value, "receipt_id": receipt.id, "reason": "drive_not_connected"}
 
             if receipt.content_hash and selected:
@@ -331,6 +358,11 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
             db.add(link)
 
             db.commit()
+            from app.models.job import JobStatus
+            _complete_job_run(
+                db, job_run_id, JobStatus.completed,
+                details=f"receipt_id={receipt.id} status={receipt.status.value}",
+            )
             return {"status": receipt.status.value, "receipt_id": receipt.id}
 
         except Exception as exc:
@@ -338,4 +370,6 @@ def process_receipt_task(self, gmail_message_id: str, user_id: int = None):
             receipt.status = ReceiptStatus.failed
             receipt.extraction_notes = str(exc)[:500]
             db.commit()
+            from app.models.job import JobStatus
+            _complete_job_run(db, job_run_id, JobStatus.failed, error=str(exc)[:500])
             raise self.retry(exc=exc, countdown=120)
