@@ -1,4 +1,6 @@
 from functools import lru_cache
+
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
@@ -20,7 +22,10 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
     GOOGLE_OAUTH_LOGIN_REDIRECT_URI: str = "http://localhost:8000/auth/google/login/callback"
     GOOGLE_API_KEY: str = ""
-    APP_SECRET_KEY: str = "change-me-in-production"
+    APP_SECRET_KEY: str = Field(
+        default="change-me-in-production",
+        validation_alias=AliasChoices("APP_SECRET_KEY", "APP_SECRET"),
+    )
 
     # Session cookie settings
     SESSION_COOKIE_NAME: str = "session"
