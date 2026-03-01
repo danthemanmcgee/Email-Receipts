@@ -52,4 +52,10 @@ RUN apt-get update \
 COPY --from=builder /install /usr/local
 COPY . .
 
+RUN useradd --no-create-home --shell /bin/false appuser \
+    && mkdir -p /tmp/receipts \
+    && chown appuser /tmp/receipts
+
+USER appuser
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
