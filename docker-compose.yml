@@ -30,7 +30,26 @@ services:
 
   worker:
     build: .
-    command: celery -A app.tasks.celery_app worker --loglevel=info -B
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://receipts:receipts@postgres:5432/receipts
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./secrets:/secrets:ro
+      - temp_files:/tmp/receipts
+    restart: unless-stopped
+
+  beat:
+    # Only one beat instance should ever run to avoid duplicate scheduled tasks.
+    build: .
+    command: celery -A app.tasks.celery_app beat --loglevel=info
     environment:
       - DATABASE_URL=postgresql://receipts:receipts@postgres:5432/receipts
       - REDIS_URL=redis://redis:6379/0

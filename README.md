@@ -274,6 +274,37 @@ non-privileged user.  You can verify this after starting the stack:
 docker compose exec app whoami   # → appuser
 ```
 
+### Worker and beat separation
+
+Celery's built-in beat scheduler (`-B`) runs inside the worker process by
+default, but this makes the scheduler a single point of failure — if the worker
+crashes and is restarted, beat loses its in-memory schedule state.
+
+`docker-compose.yml` therefore runs two separate Celery containers:
+
+| Service | Command | Role |
+|---------|---------|------|
+| `worker` | `celery … worker --loglevel=info` | Executes tasks from the queue |
+| `beat`   | `celery … beat --loglevel=info`   | Enqueues periodic tasks on schedule |
+
+Start both together (default — `docker compose up` starts all services):
+
+```bash
+docker compose up --build
+```
+
+Or start them individually:
+
+```bash
+docker compose up --build worker
+docker compose up --build beat
+```
+
+Keeping the processes separate means a worker restart does **not** interrupt the
+scheduler. Workers can also be scaled horizontally (`docker compose up --scale
+worker=3`), while beat must always run as **exactly one instance** — running
+multiple beat containers would enqueue duplicate scheduled tasks.
+
 ### Automatic restart policy
 
 All services in `docker-compose.yml` are configured with `restart: unless-stopped`.
