@@ -306,10 +306,56 @@ libraries (`libpango-1.0-0`, `libcairo2`, etc.).
 
 ## Running Tests
 
+### Unit tests (no Google credentials required)
+
+All unit tests mock Gmail, Drive, and OAuth API calls, so they run entirely
+without Google credentials:
+
 ```bash
 pip install -r requirements.txt
 pytest tests/ -v
 ```
+
+`pytest.ini` sets `addopts = -m "not integration"`, so integration tests are
+excluded by default.  The CI pipeline runs the same command with no secrets
+configured.
+
+### Integration tests (live Google credentials required)
+
+Tests marked with `@pytest.mark.integration` make real calls to the Gmail and
+Drive APIs.  They are **skipped automatically** unless the following
+environment variables are set:
+
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_OAUTH_CLIENT_ID` | OAuth 2.0 client ID from Google Cloud Console |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth 2.0 client secret |
+
+To run integration tests locally, export the variables and pass the
+`-m integration` flag:
+
+```bash
+export GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+export GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
+pytest tests/ -v -m integration
+```
+
+To run **all** tests (unit + integration) in one pass:
+
+```bash
+pytest tests/ -v -m ""
+```
+
+### CI policy
+
+- The default CI job (`pytest (unit tests – no Google credentials required)`)
+  runs on every push/PR and requires **no secrets**.
+- A second optional job (`pytest (integration tests – requires Google
+  credentials)`) runs only when manually triggered via **Actions → Run
+  workflow** with the *"Run integration tests"* toggle enabled.
+- Before triggering integration tests in CI, add `GOOGLE_OAUTH_CLIENT_ID` and
+  `GOOGLE_OAUTH_CLIENT_SECRET` as repository secrets under
+  *Settings → Secrets and variables → Actions*.
 
 ## Configuration
 
